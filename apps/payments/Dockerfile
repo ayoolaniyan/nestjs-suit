@@ -14,7 +14,7 @@ RUN npm install -g pnpm
 COPY apps/payments apps/payments
 COPY libs libs
 
-RUN pnpm install
+RUN pnpm install -r
 
 RUN pnpm run build payments
 
