@@ -11,10 +11,12 @@ COPY nest-cli.json nest-cli.json
 
 RUN npm install -g pnpm
 
+RUN npm install
+
 COPY apps/payments apps/payments
 COPY libs libs
 
-RUN pnpm install -r
+RUN cd apps/payments && pnpm install
 
 RUN pnpm run build payments
 

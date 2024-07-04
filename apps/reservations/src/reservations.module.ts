@@ -6,6 +6,7 @@ import {
   LoggerModule,
   AUTH_SERVICE,
   PAYMENTS_SERVICE,
+  HealthModule,
 } from '@app/common';
 import { ReservationsRepository } from './reservations.repository';
 import {
@@ -19,6 +20,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 @Module({
   imports: [
     DatabaseModule,
+    HealthModule,
     DatabaseModule.forFeature([
       { name: ReservationDocument.name, schema: ReservationSchema },
     ]),
@@ -30,8 +32,8 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         PORT: Joi.number().required(),
         AUTH_HOST: Joi.string().required(),
         AUTH_PORT: Joi.number().required(),
-        // PAYMENTS_HOST: Joi.string().required(),
-        // PAYMENTS_PORT: Joi.number().required(),
+        PAYMENTS_HOST: Joi.string().required(),
+        PAYMENTS_PORT: Joi.number().required(),
       }),
     }),
     ClientsModule.registerAsync([
@@ -62,4 +64,4 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
   controllers: [ReservationsController],
   providers: [ReservationsService, ReservationsRepository],
 })
-export class ReservationsModule {}
+export class ReservationsModule { }

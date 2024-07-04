@@ -11,10 +11,12 @@ COPY nest-cli.json nest-cli.json
 
 RUN npm install -g pnpm
 
+RUN npm install
+
 COPY apps/reservations apps/reservations
 COPY libs libs
 
-RUN pnpm install -r
+RUN cd apps/reservations && pnpm install
 
 RUN pnpm run build reservations
 
