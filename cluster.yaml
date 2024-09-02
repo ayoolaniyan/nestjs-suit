@@ -2,7 +2,7 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: nestjs-suit
+  name: nestjs-suit-2
   region: us-east-1
 
 nodeGroups:

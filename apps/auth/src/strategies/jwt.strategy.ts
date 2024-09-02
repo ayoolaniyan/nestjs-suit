@@ -25,6 +25,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!userId) {
       throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
     }
-    return this.userService.getUser({ _id: userId });
+    return this.userService.getUser({ id: userId });
   }
 }

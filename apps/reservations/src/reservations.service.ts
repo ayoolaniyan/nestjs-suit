@@ -2,32 +2,34 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { ReservationsRepository } from './reservations.repository';
-import { PAYMENTS_SERVICE, UserDto } from '@app/common';
+import { PAYMENTS_SERVICE, User } from '@app/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { map } from 'rxjs';
+import { Reservation } from './models/reservation.entity';
 
 @Injectable()
 export class ReservationsService {
   constructor(
     private readonly reservationRepository: ReservationsRepository,
     @Inject(PAYMENTS_SERVICE) private readonly paymentService: ClientProxy,
-  ) {}
+  ) { }
 
   create(
     createReservationDto: CreateReservationDto,
-    { email, _id: userId }: UserDto,
+    { email, id: userId }: User,
   ) {
     return this.paymentService
       .send('create_charge', { ...createReservationDto.charge, email })
       .pipe(
         map((res) => {
           console.log(res);
-          return this.reservationRepository.create({
+          const reservation = new Reservation({
             ...createReservationDto,
             timestamp: new Date(),
             userId,
             invoiceId: res.id,
           });
+          return this.reservationRepository.create(reservation);
         }),
       );
   }
@@ -36,20 +38,20 @@ export class ReservationsService {
     return this.reservationRepository.find({});
   }
 
-  findOne(_id: string) {
-    return this.reservationRepository.findOne({ _id });
+  findOne(id: number) {
+    return this.reservationRepository.findOne({ id });
   }
 
-  update(_id: string, updateReservationDto: UpdateReservationDto) {
+  update(id: number, updateReservationDto: UpdateReservationDto) {
     return this.reservationRepository.findOneAndUpdate(
       {
-        _id,
+        id,
       },
-      { $set: updateReservationDto },
+      updateReservationDto,
     );
   }
 
-  remove(_id: string) {
-    return this.reservationRepository.findOneAndDelete({ _id });
+  remove(id: number) {
+    return this.reservationRepository.findOneAndDelete({ id });
   }
 }
