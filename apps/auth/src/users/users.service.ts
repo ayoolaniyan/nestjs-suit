@@ -11,7 +11,7 @@ import { Role, User } from '@app/common';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly userRepository: UsersRepository) { }
+  constructor(private readonly userRepository: UsersRepository) {}
 
   async create(createUserDto: CreateUserDto) {
     await this.validateCreateUser(createUserDto);

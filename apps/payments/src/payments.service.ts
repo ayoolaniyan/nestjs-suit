@@ -7,17 +7,22 @@ import { PaymentCreateChargeDto } from './dto/payments-create-charge.dto';
 
 @Injectable()
 export class PaymentsService {
-  private readonly stripe = new Stripe(
-    this.configService.get<string>('STRIPE_SECRET_KEY'),
-    {
-      apiVersion: '2024-04-10',
-    },
-  );
+  private readonly stripe: Stripe;
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(NOTIFICATION_SERVICE)
     private readonly notificationService: ClientProxy,
-  ) {}
+  ) {
+    this.stripe = new Stripe(
+      this.configService.getOrThrow<string>('STRIPE_SECRET_KEY'),
+      {
+        // Pinned to the version the installed SDK's types describe. Leaving
+        // it behind the SDK is a type error, not a silent fallback.
+        apiVersion: '2024-06-20',
+      },
+    );
+  }
 
   async createCharge({ amount, email }: PaymentCreateChargeDto) {
     const paymentintent = await this.stripe.paymentIntents.create({

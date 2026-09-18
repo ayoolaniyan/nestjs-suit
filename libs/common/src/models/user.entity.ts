@@ -13,4 +13,3 @@ export class User extends AbstractEntity<User> {
   @JoinTable()
   roles?: Role[];
 }
-

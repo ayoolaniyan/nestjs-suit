@@ -12,7 +12,7 @@ export class ReservationsService {
   constructor(
     private readonly reservationRepository: ReservationsRepository,
     @Inject(PAYMENTS_SERVICE) private readonly paymentService: ClientProxy,
-  ) { }
+  ) {}
 
   create(
     createReservationDto: CreateReservationDto,
@@ -22,7 +22,6 @@ export class ReservationsService {
       .send('create_charge', { ...createReservationDto.charge, email })
       .pipe(
         map((res) => {
-          console.log(res);
           const reservation = new Reservation({
             ...createReservationDto,
             timestamp: new Date(),

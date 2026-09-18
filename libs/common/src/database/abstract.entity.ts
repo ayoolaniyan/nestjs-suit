@@ -1,11 +1,10 @@
-import { PrimaryColumn, PrimaryGeneratedColumn } from "typeorm";
+import { PrimaryGeneratedColumn } from 'typeorm';
 
 export class AbstractEntity<T> {
-
   @PrimaryGeneratedColumn()
   id: number;
 
   constructor(entity: Partial<T>) {
-    Object.assign(this, entity)
+    Object.assign(this, entity);
   }
 }

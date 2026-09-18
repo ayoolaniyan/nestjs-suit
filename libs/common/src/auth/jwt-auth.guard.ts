@@ -7,46 +7,64 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Observable, catchError, map, of, tap } from 'rxjs';
-import { AUTH_SERVICE } from '../constants/services';
 import { ClientProxy } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
+import { AUTH_SERVICE } from '../constants/services';
 import { User } from '../models/user.entity';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
-  constructor(@Inject(AUTH_SERVICE) private readonly authClient: ClientProxy, private readonly reflector: Reflector) { }
+
+  constructor(
+    @Inject(AUTH_SERVICE) private readonly authClient: ClientProxy,
+    private readonly reflector: Reflector,
+  ) {}
+
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
+    const request = context.switchToHttp().getRequest();
+
+    // Node lower-cases every incoming header name, so `headers.Authentication`
+    // was always undefined and only the cookie path ever worked.
     const jwt =
-      context.switchToHttp().getRequest().cookies?.Authentication ||
-      context.switchToHttp().getRequest().headers?.Authentication;
+      request.cookies?.Authentication ?? request.headers?.authentication;
+
     if (!jwt) {
       return false;
     }
 
-    const roles = this.reflector.get<string[]>('roles', context.getHandler());
+    const requiredRoles = this.reflector.get<string[]>(
+      'roles',
+      context.getHandler(),
+    );
 
     return this.authClient
-      .send<User>('authenticate', {
-        Authentication: jwt,
-      })
+      .send<User>('authenticate', { Authentication: jwt })
       .pipe(
-        tap((res) => {
-          if (roles) {
-            for (const role of roles) {
-              if (!res.roles?.map((role) => role.name).includes(role)) {
-                this.logger.error('The user does not have valid roles.');
-                throw new UnauthorizedException();
-              }
+        tap((user) => {
+          if (requiredRoles?.length) {
+            const held = user.roles?.map((role) => role.name) ?? [];
+            const missing = requiredRoles.filter(
+              (role) => !held.includes(role),
+            );
+
+            if (missing.length > 0) {
+              // Logged without the token or the user's identity: an
+              // authorisation failure is not a reason to put credentials in
+              // the log stream.
+              this.logger.warn(
+                `Request rejected, missing role(s): ${missing.join(', ')}`,
+              );
+              throw new UnauthorizedException();
             }
           }
-          context.switchToHttp().getRequest().user = res;
+          request.user = user;
         }),
         map(() => true),
-        catchError((err) => {
-          this.logger.error(err)
+        catchError((error) => {
+          this.logger.warn(`Authentication failed: ${error?.message}`);
           return of(false);
         }),
       );

@@ -13,10 +13,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
+        // `headers.authentication` in lower case: Node normalises incoming
+        // header names, so the capitalised form never matched.
         (request: any) =>
-          request?.Authentication ||
-          request?.cookies?.Authentication ||
-          request?.headers.Authentication,
+          request?.Authentication ??
+          request?.cookies?.Authentication ??
+          request?.headers?.authentication,
       ]),
       secretOrKey: configService.get('JWT_SECRET'),
     });

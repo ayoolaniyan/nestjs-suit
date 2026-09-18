@@ -5,55 +5,55 @@ steps:
       [
         'build',
         '-t',
-        'us-east4-docker.pkg.dev/sleepr-427713/auth/production',
+        'us-east4-docker.pkg.dev/nestjs-suit/auth/production',
         '-f',
         'apps/auth/Dockerfile',
         '.',
       ]
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      ['push', 'us-east4-docker.pkg.dev/sleepr-427713/auth/production']
+      ['push', 'us-east4-docker.pkg.dev/nestjs-suit/auth/production']
   # notifications
   - name: 'gcr.io/cloud-builders/docker'
     args:
       [
         'build',
         '-t',
-        'us-east4-docker.pkg.dev/sleepr-427713/notifications/production',
+        'us-east4-docker.pkg.dev/nestjs-suit/notifications/production',
         '-f',
         'apps/notifications/Dockerfile',
         '.',
       ]
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      ['push', 'us-east4-docker.pkg.dev/sleepr-427713/notifications/production']
+      ['push', 'us-east4-docker.pkg.dev/nestjs-suit/notifications/production']
   # payments
   - name: 'gcr.io/cloud-builders/docker'
     args:
       [
         'build',
         '-t',
-        'us-east4-docker.pkg.dev/sleepr-427713/payments/production',
+        'us-east4-docker.pkg.dev/nestjs-suit/payments/production',
         '-f',
         'apps/payments/Dockerfile',
         '.',
       ]
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      ['push', 'us-east4-docker.pkg.dev/sleepr-427713/payments/production']
+      ['push', 'us-east4-docker.pkg.dev/nestjs-suit/payments/production']
   # reservations
   - name: 'gcr.io/cloud-builders/docker'
     args:
       [
         'build',
         '-t',
-        'us-east4-docker.pkg.dev/sleepr-427713/reservations/production',
+        'us-east4-docker.pkg.dev/nestjs-suit/reservations/production',
         '-f',
         'apps/reservations/Dockerfile',
         '.',
       ]
   - name: 'gcr.io/cloud-builders/docker'
     args:
-      ['push', 'us-east4-docker.pkg.dev/sleepr-427713/reservations/production']
+      ['push', 'us-east4-docker.pkg.dev/nestjs-suit/reservations/production']
 options:
   logging: CLOUD_LOGGING_ONLY

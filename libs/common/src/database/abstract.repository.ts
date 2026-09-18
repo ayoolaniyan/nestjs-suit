@@ -1,13 +1,18 @@
-import { FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
-import { AbstractEntity } from './abstract.entity';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { EntityManager, FindOptionsWhere, Repository } from 'typeorm';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { AbstractEntity } from './abstract.entity';
 
 export abstract class AbstractRepository<T extends AbstractEntity<T>> {
-  protected readonly logger: Logger;
+  // Subclasses override this with a named logger. It is initialised here so
+  // that a subclass which forgets to still logs rather than throwing
+  // "cannot read properties of undefined" from inside an error path.
+  protected readonly logger: Logger = new Logger(AbstractRepository.name);
 
-  constructor(private readonly entityRepository: Repository<T>, private readonly entityManager: EntityManager) { }
+  constructor(
+    private readonly entityRepository: Repository<T>,
+    private readonly entityManager: EntityManager,
+  ) {}
 
   async create(entity: T): Promise<T> {
     return this.entityManager.save(entity);
@@ -27,7 +32,10 @@ export abstract class AbstractRepository<T extends AbstractEntity<T>> {
     where: FindOptionsWhere<T>,
     partialEntity: QueryDeepPartialEntity<T>,
   ): Promise<T> {
-    const updatedResult = await this.entityRepository.update(where, partialEntity);
+    const updatedResult = await this.entityRepository.update(
+      where,
+      partialEntity,
+    );
 
     if (!updatedResult.affected) {
       this.logger.warn('Entity not found in where', where);
@@ -36,13 +44,16 @@ export abstract class AbstractRepository<T extends AbstractEntity<T>> {
     return this.findOne(where);
   }
 
-  async find(where: FindOptionsWhere<T>) {
+  async find(where: FindOptionsWhere<T>): Promise<T[]> {
     return this.entityRepository.findBy(where);
   }
 
-  async findOneAndDelete(
-    where: FindOptionsWhere<T>,
-  ) {
-    await this.entityRepository.delete(where);
+  async findOneAndDelete(where: FindOptionsWhere<T>): Promise<void> {
+    const result = await this.entityRepository.delete(where);
+
+    if (!result.affected) {
+      this.logger.warn('Entity not found in where', where);
+      throw new NotFoundException('Entity was not found');
+    }
   }
 }
