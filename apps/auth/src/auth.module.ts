@@ -25,7 +25,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
     JwtModule.registerAsync({
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JW_SECRET'),
+        // Was 'JW_SECRET'. The typo resolved to undefined, so every token was
+        // signed with an empty secret while JwtStrategy verified against
+        // JWT_SECRET — login appeared to succeed and every subsequent
+        // request was rejected.
+        secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
           expiresIn: `${configService.get<number>('JWT_EXPIRATION')}s`,
         },
@@ -36,4 +40,4 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   controllers: [AuthController],
   providers: [AuthService, LocalStrategy, JwtStrategy],
 })
-export class AuthModule { }
+export class AuthModule {}

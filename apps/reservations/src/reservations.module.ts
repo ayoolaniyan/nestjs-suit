@@ -58,4 +58,4 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
   controllers: [ReservationsController],
   providers: [ReservationsService, ReservationsRepository],
 })
-export class ReservationsModule { }
+export class ReservationsModule {}

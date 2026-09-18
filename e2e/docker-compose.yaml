@@ -2,50 +2,52 @@ version: '3.3'
 services:
   e2e:
     depends_on:
-      - mongo
+      - mysql
       - reservations
       - auth
       - payments
       - notifications
-    build: 
+    build:
       context: .
       dockerfile: ./Dockerfile
     volumes:
       - ./specs:/usr/src/app/specs
-  mongo:
-    image: mongo:5.0.2
-    env_file: 
+  # The services moved from MongoDB to MySQL/TypeORM; this harness was still
+  # starting a Mongo container the application never connected to.
+  mysql:
+    image: mysql:8.0
+    env_file:
       - ../.env
     volumes:
-      - database:/usr/local/var/mongodb
+      - database:/var/lib/mysql
     ports:
-      - '27017:27017'
+      - '3306:3306'
   reservations:
     depends_on:
-      - mongo
-    image: us-east4-docker.pkg.dev/sleepr-427713/reservations/production
+      - mysql
+    image: us-east4-docker.pkg.dev/nestjs-suit/reservations/production
     env_file:
       - ../apps/reservations/.env
     ports:
       - '3000:3000'
   auth:
     depends_on:
-      - mongo
-    image: us-east4-docker.pkg.dev/sleepr-427713/auth/production
+      - mysql
+    image: us-east4-docker.pkg.dev/nestjs-suit/auth/production
     env_file:
       - ../apps/auth/.env
     ports:
       - '3001:3001'
   payments:
     depends_on:
-      - mongo
-    image: us-east4-docker.pkg.dev/sleepr-427713/payments/production
+      - mysql
+    image: us-east4-docker.pkg.dev/nestjs-suit/payments/production
     env_file:
       - ../apps/payments/.env
   notifications:
     depends_on:
-      - mongo
-    image: us-east4-docker.pkg.dev/sleepr-427713/notifications/production
+      - mysql
+    image: us-east4-docker.pkg.dev/nestjs-suit/notifications/production
     env_file:
       - ../apps/notifications/.env
 volumes:

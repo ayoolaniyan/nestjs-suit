@@ -1,4 +1,10 @@
-import { IsArray, IsEmail, IsNotEmpty, IsOptional, IsString, IsStrongPassword, Validate, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsEmail,
+  IsOptional,
+  IsStrongPassword,
+  ValidateNested,
+} from 'class-validator';
 import { RoleDto } from './role.dto';
 import { Type } from 'class-transformer';
 

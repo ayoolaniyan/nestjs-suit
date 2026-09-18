@@ -1,15 +1,14 @@
 import { Controller, Post, Res, UseGuards } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { LocalAuthGuard } from './guards/local-auth.guard';
-import { CurrentUser } from '@app/common';
-import { User } from '../../../libs/common/src/models/user.entity';
 import { Response } from 'express';
 import { MessagePattern, Payload } from '@nestjs/microservices';
+import { CurrentUser, User } from '@app/common';
+import { AuthService } from './auth.service';
+import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
@@ -21,10 +20,14 @@ export class AuthController {
     response.send(user);
   }
 
+  /**
+   * Called over TCP by other services to resolve a token into a user.
+   * The guard runs the JWT strategy, which is what actually validates the
+   * token; this handler only returns what the strategy resolved.
+   */
   @UseGuards(JwtAuthGuard)
   @MessagePattern('authenticate')
-  async authenticate(@Payload() data: any) {
-    console.log('DATA: ', data);
+  async authenticate(@Payload() data: { user: User }) {
     return data.user;
   }
 }
