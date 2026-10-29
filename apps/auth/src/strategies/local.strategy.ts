@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-local';
 import { UsersService } from '../users/users.service';
@@ -9,11 +9,11 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
     super({ usernameField: 'email' });
   }
 
+  // verifyUser already throws a generic UnauthorizedException for bad
+  // credentials. Wrapping every error in one, as before, passed the
+  // underlying error (e.g. "Entity not found") to the client and turned a
+  // database outage into a 401.
   async validate(email: string, password: string) {
-    try {
-      return await this.userService.verifyUser(email, password);
-    } catch (error) {
-      throw new UnauthorizedException(error);
-    }
+    return this.userService.verifyUser(email, password);
   }
 }

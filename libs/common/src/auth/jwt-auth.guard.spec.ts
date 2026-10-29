@@ -1,7 +1,19 @@
-import { ExecutionContext } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ClientProxy } from '@nestjs/microservices';
-import { Observable, firstValueFrom, isObservable, of, throwError } from 'rxjs';
+import {
+  Observable,
+  TimeoutError,
+  firstValueFrom,
+  isObservable,
+  of,
+  throwError,
+} from 'rxjs';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 type RequestLike = {
@@ -59,10 +71,10 @@ describe('JwtAuthGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('rejects a request carrying no token without calling the auth service', async () => {
-    const result = await resolve(guard.canActivate(contextFor({})));
-
-    expect(result).toBe(false);
+  it('answers 401 to a request carrying no token, without calling the auth service', () => {
+    expect(() => guard.canActivate(contextFor({}))).toThrow(
+      UnauthorizedException,
+    );
     expect(authClient.send).not.toHaveBeenCalled();
   });
 
@@ -73,14 +85,14 @@ describe('JwtAuthGuard', () => {
     expect(request.user).toEqual(user);
   });
 
-  it('denies a user missing a required role', async () => {
+  it('answers 403 to a user missing a required role', async () => {
     jest.spyOn(reflector, 'get').mockReturnValue(['superadmin']);
 
-    const result = await resolve(
-      guard.canActivate(contextFor({ cookies: { Authentication: 'token' } })),
-    );
-
-    expect(result).toBe(false);
+    await expect(
+      resolve(
+        guard.canActivate(contextFor({ cookies: { Authentication: 'token' } })),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('allows a user holding every required role', async () => {
@@ -93,15 +105,42 @@ describe('JwtAuthGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('denies the request when the auth service errors', async () => {
+  it('answers 401 when the auth service refuses the token', async () => {
+    // RPC error replies arrive as plain objects, not Error instances.
     authClient.send.mockReturnValue(
-      throwError(() => new Error('auth service unavailable')),
+      throwError(() => ({ status: 'error', message: 'Unauthorized' })),
     );
 
-    const result = await resolve(
-      guard.canActivate(contextFor({ cookies: { Authentication: 'token' } })),
+    await expect(
+      resolve(
+        guard.canActivate(contextFor({ cookies: { Authentication: 'token' } })),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('answers 503 when the auth service cannot be reached', async () => {
+    authClient.send.mockReturnValue(
+      throwError(() =>
+        Object.assign(new Error('connect ECONNREFUSED'), {
+          code: 'ECONNREFUSED',
+        }),
+      ),
     );
 
-    expect(result).toBe(false);
+    await expect(
+      resolve(
+        guard.canActivate(contextFor({ cookies: { Authentication: 'token' } })),
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('answers 503 when the auth service times out', async () => {
+    authClient.send.mockReturnValue(throwError(() => new TimeoutError()));
+
+    await expect(
+      resolve(
+        guard.canActivate(contextFor({ cookies: { Authentication: 'token' } })),
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

@@ -18,8 +18,16 @@ export abstract class AbstractRepository<T extends AbstractEntity<T>> {
     return this.entityManager.save(entity);
   }
 
+  async findOneOrNull(where: FindOptionsWhere<T>): Promise<T | null> {
+    return this.entityRepository.findOne({ where });
+  }
+
+  async exists(where: FindOptionsWhere<T>): Promise<boolean> {
+    return this.entityRepository.existsBy(where);
+  }
+
   async findOne(where: FindOptionsWhere<T>): Promise<T> {
-    const entity = await this.entityRepository.findOne({ where });
+    const entity = await this.findOneOrNull(where);
 
     if (!entity) {
       this.logger.warn('Entity not found with where', where);
