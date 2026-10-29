@@ -35,7 +35,7 @@ export class ReservationsController {
     @CurrentUser() user: User,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    if (idempotencyKey?.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+    if (idempotencyKey && idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
       throw new BadRequestException(
         `Idempotency-Key must be at most ${MAX_IDEMPOTENCY_KEY_LENGTH} characters`,
       );

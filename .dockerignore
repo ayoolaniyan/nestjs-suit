@@ -1,0 +1,9 @@
+**/node_modules
+dist
+coverage
+.git
+.github
+k8s
+e2e
+**/.env
+*.log

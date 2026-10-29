@@ -58,7 +58,7 @@ export class ReservationsService {
       // charge rather than leave it for support to find.
       this.logger.error(
         `Saving reservation failed after charge ${paymentIntent.id}; refunding`,
-        error?.stack,
+        (error as Error)?.stack,
       );
       await this.refund(paymentIntent.id);
       throw new InternalServerErrorException(
@@ -136,7 +136,7 @@ export class ReservationsService {
       // Logged with the payment intent id so it can be refunded by hand.
       this.logger.error(
         `MANUAL ACTION REQUIRED: refund of ${paymentIntentId} failed`,
-        error?.stack ?? JSON.stringify(error),
+        error instanceof Error ? error.stack : JSON.stringify(error),
       );
     }
   }

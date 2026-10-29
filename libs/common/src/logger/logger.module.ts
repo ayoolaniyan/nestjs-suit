@@ -17,12 +17,17 @@ import { LoggerModule as PinoLoggerModule } from 'nestjs-pino';
           ],
           censor: '[REDACTED]',
         },
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            singleLine: true,
-          },
-        },
+        // Plain JSON in production, where logs are shipped to an aggregator
+        // and pretty-printing only costs CPU; readable lines everywhere else.
+        transport:
+          process.env.NODE_ENV === 'production'
+            ? undefined
+            : {
+                target: 'pino-pretty',
+                options: {
+                  singleLine: true,
+                },
+              },
       },
     }),
   ],

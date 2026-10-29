@@ -5,7 +5,7 @@ metadata:
     app: reservations
   name: reservations
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas.reservations }}
   selector:
     matchLabels:
       app: reservations
@@ -15,23 +15,24 @@ spec:
         app: reservations
     spec:
       containers:
-      - image: 533267348520.dkr.ecr.us-east-1.amazonaws.com/reservations:latest
-        name: reservations
-        env:
-          - name: MONGODB_URI
-            valueFrom:
-              secretKeyRef:
-                name: mongodb
-                key: connectionString
-          - name: PORT
-            value: '3004'
-          - name: AUTH_HOST
-            value: auth-tcp
-          - name: AUTH_PORT
-            value: '3002'
-          - name: PAYMENTS_HOST
-            value: payments
-          - name: PAYMENTS_PORT
-            value: '3001'
-        ports:
-          - containerPort: 3004
+        - image: {{ include "nestjs-suit.image" (dict "root" . "name" "reservations") }}
+          name: reservations
+          env:
+            {{- include "nestjs-suit.mysqlEnv" . | nindent 12 }}
+            - name: PORT
+              value: {{ .Values.ports.reservations | quote }}
+            - name: AUTH_HOST
+              value: auth-tcp
+            - name: AUTH_PORT
+              value: {{ .Values.ports.authTcp | quote }}
+            - name: PAYMENTS_HOST
+              value: payments
+            - name: PAYMENTS_PORT
+              value: {{ .Values.ports.payments | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.reservations }}
+          {{- include "nestjs-suit.httpProbes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- include "nestjs-suit.securityContext" . | nindent 10 }}

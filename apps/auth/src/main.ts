@@ -15,16 +15,22 @@ async function bootstrap() {
   // service in a response.
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useLogger(app.get(Logger));
+  // Closes HTTP, TCP and database connections on SIGTERM, so a rolling
+  // deploy drains in-flight requests instead of cutting them off.
+  app.enableShutdownHooks();
   // Registered after the globals above, and with inheritAppConfig, so the TCP
   // `authenticate` reply is serialised the same way as HTTP responses.
   app.connectMicroservice<MicroserviceOptions>(
     {
       transport: Transport.TCP,
-      options: { host: '0.0.0.0', port: configService.get<number>('TCP_PORT') },
+      options: {
+        host: '0.0.0.0',
+        port: configService.getOrThrow<number>('TCP_PORT'),
+      },
     },
     { inheritAppConfig: true },
   );
   await app.startAllMicroservices();
-  await app.listen(configService.get<number>('HTTP_PORT'));
+  await app.listen(configService.getOrThrow<number>('HTTP_PORT'));
 }
 bootstrap();

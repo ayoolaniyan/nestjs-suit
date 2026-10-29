@@ -12,13 +12,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version comes from the packageManager field in package.json.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
+      # Same major as the Docker images.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -29,6 +29,43 @@ jobs:
 
       - run: pnpm test
 
-      # Proves the monorepo still compiles for all four services, which the
-      # unit tests alone do not cover.
+      # Compiles all four services; `nest build` alone builds only the
+      # default project.
       - run: pnpm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds the production images from this commit and runs the suite
+      # against them with a fresh MySQL.
+      - run: docker compose -f e2e/docker-compose.yaml up --build --abort-on-container-exit --exit-code-from e2e
+
+      - if: failure()
+        run: docker compose -f e2e/docker-compose.yaml logs --no-color
+
+      - if: always()
+        run: docker compose -f e2e/docker-compose.yaml down -v
+
+  helm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      # Placeholder values: the chart refuses to render without them, which
+      # would leave the templates themselves unchecked.
+      - name: Lint and validate rendered manifests
+        run: |
+          VALUES="--set global.imageRegistry=123456789012.dkr.ecr.us-east-1.amazonaws.com \
+            --set mysql.host=db.example.com \
+            --set notifications.smtpUser=ci@example.com \
+            --set notifications.googleOAuthClientId=ci"
+          helm lint k8s/nestjs-suit $VALUES
+          helm template ci k8s/nestjs-suit $VALUES > rendered.yaml
+          docker run --rm -v "$PWD:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /work/rendered.yaml

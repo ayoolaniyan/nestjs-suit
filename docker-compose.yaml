@@ -1,73 +1,102 @@
-version: '3.4'
+# Local development: each service runs from source with watch mode. Reads the
+# shared .env plus apps/<service>/.env (copy the .env.example files).
+
+x-http-health: &http-health
+  interval: 5s
+  timeout: 3s
+  retries: 30
+
 services:
   mysql:
     image: mysql:8.0
-    env_file: 
+    env_file:
       - ./.env
     ports:
-      - '3306:3306'
+      # Loopback only, for local tools; other machines on the network cannot
+      # reach the database.
+      - '127.0.0.1:3306:3306'
     volumes:
       - database:/var/lib/mysql
-  # mongo:
-  #   image: mongo:5.0.2
-  #   env_file: 
-  #     - ./.env
-  #   volumes:
-  #     - database:/usr/local/var/mongodb
-  #   ports:
-  #     - '27017:27017'
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" --silent']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   reservations:
-    # depends_on:
-    #   - mongo
     build:
       context: .
       dockerfile: ./apps/reservations/Dockerfile
       target: development
     command: pnpm run start:debug reservations
     env_file:
+      - ./.env
       - ./apps/reservations/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      payments:
+        condition: service_started
     ports:
       - '3000:3000'
       - '9229:9229'
     volumes:
       - .:/usr/src/app
+      # Keeps the container's own node_modules rather than the host's, which
+      # may hold binaries built for a different OS.
+      - /usr/src/app/node_modules
+
   auth:
-    # depends_on:
-    #   - mongo
     build:
       context: .
       dockerfile: ./apps/auth/Dockerfile
       target: development
     command: pnpm run start:dev auth
     env_file:
+      - ./.env
       - ./apps/auth/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
     ports:
       - '3001:3001'
     volumes:
       - .:/usr/src/app
+      - /usr/src/app/node_modules
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3001/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      <<: *http-health
+
   payments:
-    # depends_on:
-    #   - mongo
     build:
       context: .
       dockerfile: ./apps/payments/Dockerfile
       target: development
     command: pnpm run start:dev payments
     env_file:
+      - ./.env
       - ./apps/payments/.env
+    depends_on:
+      notifications:
+        condition: service_started
     volumes:
       - .:/usr/src/app
+      - /usr/src/app/node_modules
+
   notifications:
-    # depends_on:
-    #   - mongo
     build:
       context: .
       dockerfile: ./apps/notifications/Dockerfile
       target: development
     command: pnpm run start:dev notifications
     env_file:
+      - ./.env
       - ./apps/notifications/.env
     volumes:
       - .:/usr/src/app
+      - /usr/src/app/node_modules
+
 volumes:
   database:

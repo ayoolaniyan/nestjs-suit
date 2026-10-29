@@ -6,7 +6,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build auth && nest build reservations && nest build payments && nest build notifications",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -19,7 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "docker compose -f e2e/docker-compose.yaml up --build --abort-on-container-exit --exit-code-from e2e",
     "lint:fix": "eslint \"{apps,libs}/**/*.ts\" --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typeorm:auth": "node --env-file-if-exists=.env -r ts-node/register -r tsconfig-paths/register node_modules/typeorm/cli.js -d apps/auth/src/database/data-source.ts",
+    "typeorm:reservations": "node --env-file-if-exists=.env -r ts-node/register -r tsconfig-paths/register node_modules/typeorm/cli.js -d apps/reservations/src/database/data-source.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
@@ -30,6 +32,7 @@
     "@nestjs/microservices": "^10.3.9",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/terminus": "^10.3.0",
     "@nestjs/typeorm": "^10.0.2",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
@@ -101,5 +104,6 @@
     "moduleNameMapper": {
       "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1"
     }
-  }
+  },
+  "packageManager": "pnpm@10.28.0"
 }

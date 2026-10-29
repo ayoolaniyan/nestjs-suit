@@ -6,10 +6,10 @@ metadata:
   name: notifications
 spec:
   ports:
-  - name: 'tcp'
-    port: 3000
-    protocol: TCP
-    targetPort: 3000
+    - name: tcp
+      port: {{ .Values.ports.notifications }}
+      protocol: TCP
+      targetPort: tcp
   selector:
     app: notifications
   type: ClusterIP

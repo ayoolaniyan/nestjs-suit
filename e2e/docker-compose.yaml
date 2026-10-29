@@ -1,54 +1,95 @@
-version: '3.3'
+# Builds the production images from this checkout and runs the suite against
+# them. Uses throwaway configuration from ./env; nothing is pulled from a
+# registry, so it tests the code in front of you rather than the last push.
+
+x-service: &service
+  env_file:
+    - ./env/shared.env
+
+x-tcp-health: &tcp-health
+  interval: 3s
+  timeout: 3s
+  retries: 40
+
 services:
   e2e:
-    depends_on:
-      - mysql
-      - reservations
-      - auth
-      - payments
-      - notifications
     build:
       context: .
       dockerfile: ./Dockerfile
+    depends_on:
+      reservations:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
     volumes:
       - ./specs:/usr/src/app/specs
-  # The services moved from MongoDB to MySQL/TypeORM; this harness was still
-  # starting a Mongo container the application never connected to.
+
   mysql:
     image: mysql:8.0
     env_file:
-      - ../.env
-    volumes:
-      - database:/var/lib/mysql
-    ports:
-      - '3306:3306'
-  reservations:
-    depends_on:
-      - mysql
-    image: us-east4-docker.pkg.dev/nestjs-suit/reservations/production
-    env_file:
-      - ../apps/reservations/.env
-    ports:
-      - '3000:3000'
+      - ./env/shared.env
+    # No volume: every run starts from an empty database, which also proves
+    # the migrations build the schema from scratch.
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" --silent']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
   auth:
+    <<: *service
+    build:
+      context: ..
+      dockerfile: ./apps/auth/Dockerfile
+    environment:
+      HTTP_PORT: 3001
+      TCP_PORT: 3002
     depends_on:
-      - mysql
-    image: us-east4-docker.pkg.dev/nestjs-suit/auth/production
-    env_file:
-      - ../apps/auth/.env
-    ports:
-      - '3001:3001'
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3001/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      <<: *tcp-health
+
+  reservations:
+    <<: *service
+    build:
+      context: ..
+      dockerfile: ./apps/reservations/Dockerfile
+    environment:
+      PORT: 3000
+    depends_on:
+      mysql:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      payments:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      <<: *tcp-health
+
   payments:
+    <<: *service
+    build:
+      context: ..
+      dockerfile: ./apps/payments/Dockerfile
+    environment:
+      PORT: 3003
     depends_on:
-      - mysql
-    image: us-east4-docker.pkg.dev/nestjs-suit/payments/production
-    env_file:
-      - ../apps/payments/.env
+      notifications:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('net').connect(3003, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      <<: *tcp-health
+
   notifications:
-    depends_on:
-      - mysql
-    image: us-east4-docker.pkg.dev/nestjs-suit/notifications/production
-    env_file:
-      - ../apps/notifications/.env
-volumes:
-  database:
+    <<: *service
+    build:
+      context: ..
+      dockerfile: ./apps/notifications/Dockerfile
+    environment:
+      PORT: 3004
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('net').connect(3004, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      <<: *tcp-health

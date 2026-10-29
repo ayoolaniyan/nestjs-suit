@@ -1,5 +1,5 @@
 import { AbstractEntity } from '@app/common';
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, Index } from 'typeorm';
 
 @Entity()
 export class Reservation extends AbstractEntity<Reservation> {
@@ -9,6 +9,8 @@ export class Reservation extends AbstractEntity<Reservation> {
   startDate: Date;
   @Column()
   endDate: Date;
+  // Every owner-scoped query filters on it.
+  @Index()
   @Column()
   userId: number;
   @Column()
