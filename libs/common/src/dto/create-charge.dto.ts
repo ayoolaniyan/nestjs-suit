@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsString, Min } from 'class-validator';
 
 export class CreateChargeDto {
   // A Stripe PaymentMethod id (pm_...) created on the client with Stripe.js /
@@ -8,6 +8,9 @@ export class CreateChargeDto {
   @IsNotEmpty()
   paymentMethodId: string;
 
-  @IsNumber()
+  // In dollars. At most two decimal places, so it converts to a whole number
+  // of cents exactly; 0.50 is Stripe's minimum USD charge.
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.5)
   amount: number;
 }

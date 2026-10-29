@@ -1,6 +1,5 @@
 import { Test } from '@nestjs/testing';
 import {
-  NotFoundException,
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -13,6 +12,8 @@ describe('UsersService', () => {
   let repository: {
     create: jest.Mock;
     findOne: jest.Mock;
+    findOneOrNull: jest.Mock;
+    exists: jest.Mock;
     find: jest.Mock;
   };
 
@@ -20,6 +21,8 @@ describe('UsersService', () => {
     repository = {
       create: jest.fn((user) => Promise.resolve({ id: 1, ...user })),
       findOne: jest.fn(),
+      findOneOrNull: jest.fn(),
+      exists: jest.fn().mockResolvedValue(false),
       find: jest.fn(),
     };
 
@@ -35,10 +38,6 @@ describe('UsersService', () => {
 
   describe('create', () => {
     it('hashes the password before it reaches the repository', async () => {
-      // The repository reports "not found", which is how this codebase
-      // signals that the email is free.
-      repository.findOne.mockRejectedValue(new NotFoundException());
-
       await service.create({
         email: 'user@example.com',
         password: 'plain-text-password',
@@ -52,8 +51,6 @@ describe('UsersService', () => {
     });
 
     it('never persists roles supplied by the caller', async () => {
-      repository.findOne.mockRejectedValue(new NotFoundException());
-
       await service.create({
         email: 'user@example.com',
         password: 'plain-text-password',
@@ -65,10 +62,7 @@ describe('UsersService', () => {
     });
 
     it('refuses an email that already exists', async () => {
-      repository.findOne.mockResolvedValue({
-        id: 1,
-        email: 'taken@example.com',
-      });
+      repository.exists.mockResolvedValue(true);
 
       await expect(
         service.create({
@@ -84,7 +78,7 @@ describe('UsersService', () => {
   describe('verifyUser', () => {
     it('returns the user when the password matches', async () => {
       const password = 'plain-text-password';
-      repository.findOne.mockResolvedValue({
+      repository.findOneOrNull.mockResolvedValue({
         id: 1,
         email: 'user@example.com',
         password: await bcrypt.hash(password, 10),
@@ -96,7 +90,7 @@ describe('UsersService', () => {
     });
 
     it('rejects a wrong password', async () => {
-      repository.findOne.mockResolvedValue({
+      repository.findOneOrNull.mockResolvedValue({
         id: 1,
         email: 'user@example.com',
         password: await bcrypt.hash('the-real-password', 10),
@@ -105,6 +99,17 @@ describe('UsersService', () => {
       await expect(
         service.verifyUser('user@example.com', 'guessed'),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects an unknown email with the same error as a wrong password', async () => {
+      repository.findOneOrNull.mockResolvedValue(null);
+      const compare = jest.spyOn(bcrypt, 'compare');
+
+      await expect(
+        service.verifyUser('nobody@example.com', 'guessed'),
+      ).rejects.toThrow(new UnauthorizedException('Credentials are not valid'));
+      // Still hashes, so the response time does not reveal the miss.
+      expect(compare).toHaveBeenCalled();
     });
   });
 });

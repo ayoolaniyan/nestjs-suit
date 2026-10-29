@@ -1,16 +1,29 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   Inject,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Observable, catchError, map, of, tap } from 'rxjs';
+import {
+  Observable,
+  TimeoutError,
+  catchError,
+  map,
+  throwError,
+  timeout,
+} from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
 import { AUTH_SERVICE } from '../constants/services';
 import { User } from '../models/user.entity';
+
+// Without a timeout a stalled auth service holds every authenticated request
+// open indefinitely.
+export const AUTH_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -21,18 +34,16 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
   ) {}
 
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
+  canActivate(context: ExecutionContext): Observable<boolean> | boolean {
     const request = context.switchToHttp().getRequest();
 
-    // Node lower-cases every incoming header name, so `headers.Authentication`
-    // was always undefined and only the cookie path ever worked.
     const jwt =
       request.cookies?.Authentication ?? request.headers?.authentication;
 
+    // Returning false would make Nest answer 403; an absent credential is a
+    // 401.
     if (!jwt) {
-      return false;
+      throw new UnauthorizedException();
     }
 
     const requiredRoles = this.reflector.get<string[]>(
@@ -43,7 +54,11 @@ export class JwtAuthGuard implements CanActivate {
     return this.authClient
       .send<User>('authenticate', { Authentication: jwt })
       .pipe(
-        tap((user) => {
+        timeout(AUTH_TIMEOUT_MS),
+        catchError((error) => throwError(() => this.toHttpError(error))),
+        // After catchError, so a missing role stays a 403 rather than being
+        // folded into the authentication failure above.
+        map((user) => {
           if (requiredRoles?.length) {
             const held = user.roles?.map((role) => role.name) ?? [];
             const missing = requiredRoles.filter(
@@ -57,16 +72,27 @@ export class JwtAuthGuard implements CanActivate {
               this.logger.warn(
                 `Request rejected, missing role(s): ${missing.join(', ')}`,
               );
-              throw new UnauthorizedException();
+              throw new ForbiddenException();
             }
           }
           request.user = user;
-        }),
-        map(() => true),
-        catchError((error) => {
-          this.logger.warn(`Authentication failed: ${error?.message}`);
-          return of(false);
+          return true;
         }),
       );
+  }
+
+  /**
+   * A reply from the auth service means the token was refused. A timeout or a
+   * socket error (which carries a `code` such as ECONNREFUSED) means the auth
+   * service could not be asked, and the client should retry rather than log in
+   * again.
+   */
+  private toHttpError(error: any) {
+    if (error instanceof TimeoutError || typeof error?.code === 'string') {
+      this.logger.error(`Auth service unreachable: ${error?.message}`);
+      return new ServiceUnavailableException();
+    }
+    this.logger.warn(`Authentication failed: ${error?.message}`);
+    return new UnauthorizedException();
   }
 }
