@@ -1,25 +1,34 @@
 version: 0.2
 
+# Builds the four production images and pushes them to ECR, tagged with the
+# commit SHA (immutable, what Helm should deploy) and `latest`.
+#
+# The account is read from the build's own credentials and the region from
+# CodeBuild's AWS_DEFAULT_REGION, so nothing account-specific is committed.
+
+env:
+  variables:
+    SERVICES: 'reservations auth payments notifications'
+
 phases:
   pre_build:
     commands:
-      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 533267348520.dkr.ecr.us-east-1.amazonaws.com
-  build: 
-    commands: 
-      - docker build -t reservations -f ./apps/reservations/Dockerfile .
-      - docker tag reservations:latest 533267348520.dkr.ecr.us-east-1.amazonaws.com/reservations:latest
-
-      - docker build -t auth -f ./apps/auth/Dockerfile .
-      - docker tag auth:latest 533267348520.dkr.ecr.us-east-1.amazonaws.com/auth:latest
-
-      - docker build -t payments -f ./apps/payments/Dockerfile .
-      - docker tag payments:latest 533267348520.dkr.ecr.us-east-1.amazonaws.com/payments:latest
-
-      - docker build -t notifications -f ./apps/notifications/Dockerfile .
-      - docker tag notifications:latest 533267348520.dkr.ecr.us-east-1.amazonaws.com/notifications:latest
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - REGISTRY=$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+      - aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
+  build:
+    commands:
+      - |
+        for service in $SERVICES; do
+          docker build -t $REGISTRY/$service:$TAG -t $REGISTRY/$service:latest -f ./apps/$service/Dockerfile .
+        done
   post_build:
     commands:
-      - docker push 533267348520.dkr.ecr.us-east-1.amazonaws.com/reservations:latest
-      - docker push 533267348520.dkr.ecr.us-east-1.amazonaws.com/auth:latest
-      - docker push 533267348520.dkr.ecr.us-east-1.amazonaws.com/payments:latest
-      - docker push 533267348520.dkr.ecr.us-east-1.amazonaws.com/notifications:latest
+      # post_build runs even when build failed; never push a partial set.
+      - '[ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ] || { echo "Build failed, not pushing"; exit 1; }'
+      - |
+        for service in $SERVICES; do
+          docker push --all-tags $REGISTRY/$service
+        done
+      - echo "Deploy with --set global.imageTag=$TAG"

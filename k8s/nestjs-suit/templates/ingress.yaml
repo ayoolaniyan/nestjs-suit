@@ -1,25 +1,38 @@
+{{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: nestjs-suit
+  {{- with .Values.ingress.annotations }}
   annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    kubernetes.io/ingress.class: alb
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
+  ingressClassName: {{ .Values.ingress.className }}
   rules:
     - http:
         paths:
-          - path: /reservations/*
-            pathType: ImplementationSpecific
+          - path: /reservations
+            pathType: Prefix
             backend:
               service:
                 name: reservations
                 port:
-                  number: 3004
-          - path: /auth/*
-            pathType: ImplementationSpecific
+                  number: {{ .Values.ports.reservations }}
+          - path: /auth
+            pathType: Prefix
             backend:
               service:
                 name: auth-http
                 port:
-                  number: 3003
+                  number: {{ .Values.ports.authHttp }}
+          # Signup and "current user" live on the auth service's /users
+          # controller, which the ingress previously did not route at all.
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-http
+                port:
+                  number: {{ .Values.ports.authHttp }}
+{{- end }}

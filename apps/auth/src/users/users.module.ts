@@ -3,10 +3,11 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { DatabaseModule, LoggerModule, Role, User } from '@app/common';
 import { UsersRepository } from './users.repository';
+import { authDatabaseOptions } from '../database/database.options';
 
 @Module({
   imports: [
-    DatabaseModule,
+    DatabaseModule.forRoot(authDatabaseOptions),
     DatabaseModule.forFeature([User, Role]),
     LoggerModule,
   ],

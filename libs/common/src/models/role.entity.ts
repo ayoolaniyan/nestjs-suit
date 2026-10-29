@@ -3,6 +3,6 @@ import { AbstractEntity } from '../database';
 
 @Entity()
 export class Role extends AbstractEntity<Role> {
-  @Column()
+  @Column({ unique: true })
   name: string;
 }

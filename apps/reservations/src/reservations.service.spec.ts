@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { TimeoutError, of, throwError } from 'rxjs';
-import { PAYMENTS_SERVICE, User } from '@app/common';
+import { PAYMENTS_SERVICE, Role, User } from '@app/common';
 import { ReservationsService } from './reservations.service';
 import { ReservationsRepository } from './reservations.repository';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -24,12 +24,12 @@ describe('ReservationsService', () => {
     findOneAndDelete: jest.Mock;
   };
 
-  const owner = { id: 7, email: 'owner@example.com', roles: [] } as User;
-  const admin = {
+  const owner = new User({ id: 7, email: 'owner@example.com', roles: [] });
+  const admin = new User({
     id: 1,
     email: 'admin@example.com',
-    roles: [{ id: 1, name: 'Admin' }],
-  } as User;
+    roles: [new Role({ id: 1, name: 'Admin' })],
+  });
 
   const inDays = (days: number) => new Date(Date.now() + days * DAY_MS);
   const booking = (): CreateReservationDto => ({

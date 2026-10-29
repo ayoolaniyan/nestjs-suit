@@ -5,7 +5,7 @@ metadata:
     app: notifications
   name: notifications
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas.notifications }}
   selector:
     matchLabels:
       app: notifications
@@ -15,24 +15,29 @@ spec:
         app: notifications
     spec:
       containers:
-      - image: 533267348520.dkr.ecr.us-east-1.amazonaws.com/notifications:latest
-        name: notifications
-        env:
-          - name: PORT
-            value: '3000'
-          - name: GOOGLE_OAUTH_CLIENT_ID
-            value: 1023500381404-iaih8un72rifkfqt6a9cl9ifg616pr5s.apps.googleusercontent.com
-          - name: GOOGLE_OAUTH_CLIENT_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: google
-                key: clientSecret
-          - name: GOOGLE_OAUTH_REFRESH_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: google
-                key: refreshToken
-          - name: SMTP_USER
-            value: olabolaji100@gmail.com
-        ports:
-          - containerPort: 3000
+        - image: {{ include "nestjs-suit.image" (dict "root" . "name" "notifications") }}
+          name: notifications
+          env:
+            - name: PORT
+              value: {{ .Values.ports.notifications | quote }}
+            - name: SMTP_USER
+              value: {{ required "notifications.smtpUser is required" .Values.notifications.smtpUser | quote }}
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              value: {{ required "notifications.googleOAuthClientId is required" .Values.notifications.googleOAuthClientId | quote }}
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.notifications.googleSecretName }}
+                  key: clientSecret
+            - name: GOOGLE_OAUTH_REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.notifications.googleSecretName }}
+                  key: refreshToken
+          ports:
+            - name: tcp
+              containerPort: {{ .Values.ports.notifications }}
+          {{- include "nestjs-suit.tcpProbes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- include "nestjs-suit.securityContext" . | nindent 10 }}

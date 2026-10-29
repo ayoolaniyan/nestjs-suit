@@ -3,6 +3,7 @@ import { ReservationsService } from './reservations.service';
 import { ReservationsController } from './reservations.controller';
 import {
   DatabaseModule,
+  databaseValidationSchema,
   LoggerModule,
   AUTH_SERVICE,
   PAYMENTS_SERVICE,
@@ -13,16 +14,18 @@ import { Reservation } from './models/reservation.entity';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as Joi from 'joi';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { reservationsDatabaseOptions } from './database/database.options';
 
 @Module({
   imports: [
-    DatabaseModule,
+    DatabaseModule.forRoot(reservationsDatabaseOptions),
     HealthModule,
     DatabaseModule.forFeature([Reservation]),
     LoggerModule,
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
+        ...databaseValidationSchema,
         PORT: Joi.number().required(),
         AUTH_HOST: Joi.string().required(),
         AUTH_PORT: Joi.number().required(),

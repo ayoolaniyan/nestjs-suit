@@ -5,7 +5,7 @@ metadata:
     app: auth
   name: auth
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas.auth }}
   selector:
     matchLabels:
       app: auth
@@ -15,26 +15,27 @@ spec:
         app: auth
     spec:
       containers:
-      - image: 533267348520.dkr.ecr.us-east-1.amazonaws.com/auth:latest
-        name: auth
-        env:
-          - name: MONGODB_URI
-            valueFrom:
-              secretKeyRef:
-                name: mongodb
-                key: connectionString
-          - name: JWT_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: jwt
-                key: jwtSecret
-          - name: JWT_EXPIRATION
-            value: '3600'
-          - name: TCP_PORT
-            value: '3002'
-          - name: HTTP_PORT
-            value: '3003'
-        ports:
-          - containerPort: 3002
-          - containerPort: 3003
-      
+        - image: {{ include "nestjs-suit.image" (dict "root" . "name" "auth") }}
+          name: auth
+          env:
+            {{- include "nestjs-suit.mysqlEnv" . | nindent 12 }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jwt.secretName }}
+                  key: jwtSecret
+            - name: JWT_EXPIRATION
+              value: {{ .Values.jwt.expirationSeconds | quote }}
+            - name: HTTP_PORT
+              value: {{ .Values.ports.authHttp | quote }}
+            - name: TCP_PORT
+              value: {{ .Values.ports.authTcp | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.authHttp }}
+            - name: tcp
+              containerPort: {{ .Values.ports.authTcp }}
+          {{- include "nestjs-suit.httpProbes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- include "nestjs-suit.securityContext" . | nindent 10 }}

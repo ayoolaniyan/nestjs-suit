@@ -1,36 +1,35 @@
-ARG NODE_VERSION=22.0.0
+ARG NODE_VERSION=22
 
-FROM node:${NODE_VERSION}-alpine As development
+FROM node:${NODE_VERSION}-alpine AS development
 
 WORKDIR /usr/src/app
 
-COPY package.json ./
-COPY pnpm-lock.yaml ./
-COPY tsconfig.json tsconfig.json
-COPY nest-cli.json nest-cli.json
+# pnpm at the version pinned by package.json's packageManager field.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
-RUN npm install -g pnpm
+# Dependencies before source, so a code change does not reinstall them.
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
+COPY tsconfig.json nest-cli.json ./
 COPY apps/auth apps/auth
 COPY libs libs
 
-RUN pnpm install -r
+RUN pnpm exec nest build auth
 
-RUN pnpm run build auth
-
-FROM node:${NODE_VERSION}-alpine as production
+FROM node:${NODE_VERSION}-alpine AS production
 
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
 
 WORKDIR /usr/src/app
 
-COPY package.json ./
-COPY pnpm-lock.yaml ./
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
-RUN npm install -g pnpm
-
-RUN pnpm install --prod
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile
 
 COPY --from=development /usr/src/app/dist ./dist
 

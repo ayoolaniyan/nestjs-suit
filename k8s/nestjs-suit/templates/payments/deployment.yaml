@@ -5,7 +5,7 @@ metadata:
     app: payments
   name: payments
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicas.payments }}
   selector:
     matchLabels:
       app: payments
@@ -15,24 +15,24 @@ spec:
         app: payments
     spec:
       containers:
-      - image: 533267348520.dkr.ecr.us-east-1.amazonaws.com/payments:latest
-        name: payments
-        env:
-          - name: PORT
-            value: '3001'
-          - name: NOTIFICATION_HOST
-            value: notifications
-          - name: NOTIFICATION_PORT
-            value: '3000'
-          - name: STRIPE_SECRET_KEY
-            valueFrom:
-              secretKeyRef:
-                name: stripe
-                key: apiKey
-          - name: MONGODB_URI
-            valueFrom:
-              secretKeyRef:
-                name: mongodb
-                key: connectionString
-        ports:
-          - containerPort: 3001
+        - image: {{ include "nestjs-suit.image" (dict "root" . "name" "payments") }}
+          name: payments
+          env:
+            - name: PORT
+              value: {{ .Values.ports.payments | quote }}
+            - name: NOTIFICATION_HOST
+              value: notifications
+            - name: NOTIFICATION_PORT
+              value: {{ .Values.ports.notifications | quote }}
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.stripe.secretName }}
+                  key: apiKey
+          ports:
+            - name: tcp
+              containerPort: {{ .Values.ports.payments }}
+          {{- include "nestjs-suit.tcpProbes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- include "nestjs-suit.securityContext" . | nindent 10 }}

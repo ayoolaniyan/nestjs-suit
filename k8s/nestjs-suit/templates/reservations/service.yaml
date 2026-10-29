@@ -6,10 +6,10 @@ metadata:
   name: reservations
 spec:
   ports:
-  - name: 'http'
-    port: 3004
-    protocol: TCP
-    targetPort: 3004
+    - name: http
+      port: {{ .Values.ports.reservations }}
+      protocol: TCP
+      targetPort: http
   selector:
     app: reservations
   type: NodePort

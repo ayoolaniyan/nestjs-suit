@@ -6,10 +6,10 @@ metadata:
   name: auth-tcp
 spec:
   ports:
-  - name: 'tcp'
-    port: 3002
-    protocol: TCP
-    targetPort: 3002
+    - name: tcp
+      port: {{ .Values.ports.authTcp }}
+      protocol: TCP
+      targetPort: tcp
   selector:
     app: auth
   type: ClusterIP

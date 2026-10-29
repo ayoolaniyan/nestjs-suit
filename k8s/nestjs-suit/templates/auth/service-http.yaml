@@ -6,10 +6,10 @@ metadata:
   name: auth-http
 spec:
   ports:
-  - name: 'http'
-    port: 3003
-    protocol: TCP
-    targetPort: 3003
+    - name: http
+      port: {{ .Values.ports.authHttp }}
+      protocol: TCP
+      targetPort: http
   selector:
     app: auth
   type: NodePort

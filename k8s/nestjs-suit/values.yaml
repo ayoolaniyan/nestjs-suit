@@ -1,0 +1,60 @@
+global:
+  # ECR registry, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com. Required.
+  imageRegistry: ''
+  # Deploy the commit SHA tag that buildspec.yaml prints, not `latest`, so a
+  # release is reproducible and can be rolled back.
+  imageTag: latest
+
+# Ports match .env.example and docker-compose.
+ports:
+  reservations: 3000
+  authHttp: 3001
+  authTcp: 3002
+  payments: 3003
+  notifications: 3004
+
+mysql:
+  # e.g. the RDS endpoint. Required.
+  host: ''
+  port: 3306
+  database: reservations
+  # Secret with `username` and `password` keys, for a non-root database user.
+  secretName: mysql
+
+jwt:
+  # Secret with a `jwtSecret` key.
+  secretName: jwt
+  expirationSeconds: 3600
+
+stripe:
+  # Secret with an `apiKey` key.
+  secretName: stripe
+
+notifications:
+  smtpUser: ''
+  googleOAuthClientId: ''
+  # Secret with `clientSecret` and `refreshToken` keys.
+  googleSecretName: google
+
+# auth and reservations apply their database migrations at startup. Keep them
+# at one replica unless migrations move to a separate job, or two pods may
+# race to apply the same one.
+replicas:
+  reservations: 1
+  auth: 1
+  payments: 1
+  notifications: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/healthcheck-path: /health

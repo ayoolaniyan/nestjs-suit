@@ -20,8 +20,8 @@ What is mine, beyond the course material:
 - **Added role-based authorisation** — a `Role` entity, a many-to-many
   relation to `User`, and role checking inside the shared `JwtAuthGuard`.
 - **Added a health module** exposed by each service, and Kubernetes ingress.
-- **Added Helm charts** for all four services and a Google Cloud Build
-  pipeline that builds and pushes each image.
+- **Added Helm charts** for all four services and an AWS CodeBuild pipeline
+  that builds and pushes each image to ECR.
 - **Fixed a set of real defects** and added the unit tests below that pin
   them. Those are described in the next section, because they are the part
   worth talking about.
@@ -57,13 +57,15 @@ not build. Two declared dependencies (`mongoose`, `@nestjs/mongoose`) were
 left over from before the TypeORM migration and are gone.
 
 **Config validation described a database that is no longer used.** The shared
-`ConfigModule` required `MONGODB_URI`; it now validates the MySQL settings
-the services actually connect with.
+`ConfigModule` required `MONGODB_URI`. The MySQL settings the services
+actually connect with are now validated in each database-backed service's
+own config schema, and the unused shared module is gone.
 
 **`synchronize` was driven by a string.** `MYSQL_SYNCHRONIZE=false` is the
 string `'false'`, which is truthy — so TypeORM schema synchronisation was
-enabled whenever the variable was set at all. It is now an explicit
-comparison and is additionally refused when `NODE_ENV=production`.
+enabled whenever the variable was set at all. It was first made an explicit
+comparison refused in production, and has since been removed altogether in
+favour of migrations (see Database below).
 
 **Deletes reported success whether or not anything was deleted.**
 `findOneAndDelete` ignored the affected-row count; it now raises
@@ -89,28 +91,75 @@ JWT guard, the `@CurrentUser` decorator, config, logging and health modules.
 ## Running it
 
 ```bash
-cp .env.example .env    # then fill in the values
-pnpm install
+cp .env.example .env    # shared settings; fill in the blanks
+for svc in auth reservations payments notifications; do
+  cp apps/$svc/.env.example apps/$svc/.env   # each service's own port
+done
 docker compose up
+```
+
+Ports: reservations `3000` (HTTP), auth `3001` (HTTP) and `3002` (TCP),
+payments `3003` (TCP), notifications `3004` (TCP). `/health` (liveness) and
+`/health/ready` (database ping) are served by auth and reservations.
+
+## Database
+
+The schema is managed by TypeORM migrations, never `synchronize`. Each
+database-backed service applies its own migrations at startup and records
+them in its own table (`migrations_auth`, `migrations_reservations`), so the
+two never race over the same migration.
+
+After changing an entity, generate a migration against a running database and
+add it to that service's `src/database/migrations/index.ts`:
+
+```bash
+MYSQL_HOST=localhost pnpm typeorm:auth migration:generate \
+  apps/auth/src/database/migrations/DescribeTheChange
+```
+
+(`typeorm:reservations` for the reservations service. The scripts read `.env`;
+variables already set in the shell take precedence.)
+
+**Making an admin.** Signup cannot grant roles. The `Admin` role is created by
+a migration; link a user to it directly:
+
+```sql
+INSERT INTO user_roles_role (userId, roleId)
+SELECT <user id>, id FROM role WHERE name = 'Admin';
 ```
 
 ## Tests
 
 ```bash
-pnpm test        # unit tests
+pnpm test           # unit tests
 pnpm run lint
 pnpm run typecheck
-pnpm run test:e2e   # builds the images and runs the suite against compose
+pnpm run test:e2e   # builds the production images and runs the suite against them
 ```
 
-Unit tests and the type check run on every push via GitHub Actions. The e2e
-suite needs Docker and the four service images, so it is run locally.
+GitHub Actions runs lint, the type check, unit tests and a build of all four
+services on every push, then the e2e suite against images built from that
+commit with a fresh MySQL, and a Helm lint plus schema validation of the
+rendered manifests.
 
 ## Deployment
 
-Helm charts for each service live under `k8s/nestjs-suit`, with a shared
-ingress. `cloudbuild.yaml` builds and pushes the four production images to
-Artifact Registry.
+`buildspec.yaml` (AWS CodeBuild) builds the four production images and pushes
+them to ECR, tagged with the short commit SHA and `latest`. The Helm chart in
+`k8s/nestjs-suit` deploys them to EKS behind an ALB ingress:
+
+```bash
+helm upgrade --install nestjs-suit k8s/nestjs-suit \
+  --set global.imageRegistry=<account>.dkr.ecr.<region>.amazonaws.com \
+  --set global.imageTag=<commit sha> \
+  --set mysql.host=<database endpoint> \
+  --set notifications.smtpUser=<sender address> \
+  --set notifications.googleOAuthClientId=<client id>
+```
+
+The chart expects these Secrets to exist: `mysql` (`username`, `password`),
+`jwt` (`jwtSecret`), `stripe` (`apiKey`) and `google` (`clientSecret`,
+`refreshToken`). See `values.yaml` for everything else.
 
 ## Licence
 
