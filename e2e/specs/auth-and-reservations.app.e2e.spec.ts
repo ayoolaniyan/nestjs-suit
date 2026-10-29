@@ -1,6 +1,14 @@
 const AUTH = 'http://auth:3001';
 const RESERVATIONS = 'http://reservations:3000';
 
+/**
+ * A fresh password per call, generated rather than written out so that no
+ * credential-shaped literal sits in the repository. The prefix supplies the
+ * uppercase letter, digit and symbol that IsStrongPassword requires; the UUID
+ * supplies length and lowercase.
+ */
+const randomPassword = () => `A1!${crypto.randomUUID()}`;
+
 const json = (body: unknown) => ({
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -11,7 +19,7 @@ const json = (body: unknown) => ({
 async function signUpAndLogIn(extra: Record<string, unknown> = {}) {
   const credentials = {
     email: `user-${Date.now()}-${Math.random()}@example.com`,
-    password: 'Str0ng!Passw0rd',
+    password: randomPassword(),
   };
 
   const signup = await fetch(`${AUTH}/users`, json({ ...credentials, ...extra }));
@@ -63,7 +71,7 @@ describe('auth', () => {
 
     const wrongPassword = await fetch(
       `${AUTH}/auth/login`,
-      json({ ...credentials, password: 'Wr0ng!Passw0rd' }),
+      json({ ...credentials, password: randomPassword() }),
     );
     const unknownEmail = await fetch(
       `${AUTH}/auth/login`,
