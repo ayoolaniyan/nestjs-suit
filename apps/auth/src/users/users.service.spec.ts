@@ -51,6 +51,19 @@ describe('UsersService', () => {
       ).toBe(true);
     });
 
+    it('never persists roles supplied by the caller', async () => {
+      repository.findOne.mockRejectedValue(new NotFoundException());
+
+      await service.create({
+        email: 'user@example.com',
+        password: 'plain-text-password',
+        roles: [{ name: 'Admin' }],
+      } as never);
+
+      const [persisted] = repository.create.mock.calls[0];
+      expect(persisted.roles).toBeUndefined();
+    });
+
     it('refuses an email that already exists', async () => {
       repository.findOne.mockResolvedValue({
         id: 1,

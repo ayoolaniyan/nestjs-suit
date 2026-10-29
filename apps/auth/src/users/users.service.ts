@@ -7,7 +7,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UsersRepository } from './users.repository';
 import * as bcrypt from 'bcryptjs';
 import { GetUserDto } from './dto/get-user.dto';
-import { Role, User } from '@app/common';
+import { User } from '@app/common';
 
 @Injectable()
 export class UsersService {
@@ -16,10 +16,11 @@ export class UsersService {
   async create(createUserDto: CreateUserDto) {
     await this.validateCreateUser(createUserDto);
 
+    // Fields are picked explicitly rather than spread so that nothing the
+    // caller sends beyond the DTO — roles in particular — reaches the entity.
     const user = new User({
-      ...createUserDto,
+      email: createUserDto.email,
       password: await bcrypt.hash(createUserDto.password, 10),
-      roles: createUserDto.roles?.map((roleDto) => new Role(roleDto)),
     });
 
     return this.userRepository.create(user);

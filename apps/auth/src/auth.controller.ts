@@ -17,7 +17,9 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     await this.authService.login(user, response);
-    response.send(user);
+    // Returned rather than passed to response.send(), which bypassed the
+    // serializer interceptor and sent the password hash to the client.
+    return user;
   }
 
   /**

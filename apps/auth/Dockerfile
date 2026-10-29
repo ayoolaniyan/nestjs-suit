@@ -21,7 +21,7 @@ RUN pnpm run build auth
 FROM node:${NODE_VERSION}-alpine as production
 
 ARG NODE_ENV=production
-ENV NODE_ENV={NODE_ENV}
+ENV NODE_ENV=${NODE_ENV}
 
 WORKDIR /usr/src/app
 
@@ -33,5 +33,8 @@ RUN npm install -g pnpm
 RUN pnpm install --prod
 
 COPY --from=development /usr/src/app/dist ./dist
+
+# The official image ships an unprivileged `node` user; run as it, not root.
+USER node
 
 CMD [ "node", "dist/apps/auth/main" ]
