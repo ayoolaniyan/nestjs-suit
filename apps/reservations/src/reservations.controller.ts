@@ -8,7 +8,7 @@ import {
   Delete,
   UseGuards,
 } from '@nestjs/common';
-import { ReservationsService } from './reservations.service';
+import { ADMIN_ROLE, ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { CurrentUser, JwtAuthGuard, Roles, User } from '@app/common';
@@ -28,14 +28,14 @@ export class ReservationsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async findAll() {
-    return this.reservationsService.findAll();
+  async findAll(@CurrentUser() user: User) {
+    return this.reservationsService.findAll(user);
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id') id: string) {
-    return this.reservationsService.findOne(+id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.reservationsService.findOne(+id, user);
   }
 
   @Patch(':id')
@@ -43,14 +43,15 @@ export class ReservationsController {
   async update(
     @Param('id') id: string,
     @Body() updateReservationDto: UpdateReservationDto,
+    @CurrentUser() user: User,
   ) {
-    return this.reservationsService.update(+id, updateReservationDto);
+    return this.reservationsService.update(+id, updateReservationDto, user);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  @Roles('Admin')
-  async remove(@Param('id') id: string) {
-    return this.reservationsService.remove(+id);
+  @Roles(ADMIN_ROLE)
+  async remove(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.reservationsService.remove(+id, user);
   }
 }

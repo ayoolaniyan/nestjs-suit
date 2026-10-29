@@ -1,18 +1,13 @@
-import {
-  IsDefined,
-  IsNotEmptyObject,
-  IsNumber,
-  ValidateNested,
-} from 'class-validator';
-import { CardDto } from './card.dto';
-import { Type } from 'class-transformer';
+import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
 
 export class CreateChargeDto {
-  @IsDefined()
-  @IsNotEmptyObject()
-  @ValidateNested()
-  @Type(() => CardDto)
-  card: CardDto;
+  // A Stripe PaymentMethod id (pm_...) created on the client with Stripe.js /
+  // Elements. Raw card numbers must never reach these services: handling them
+  // brings the whole system into PCI-DSS scope.
+  @IsString()
+  @IsNotEmpty()
+  paymentMethodId: string;
+
   @IsNumber()
   amount: number;
 }
