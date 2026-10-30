@@ -52,7 +52,10 @@ services:
     volumes:
       - ../docker/rabbitmq/guest-from-network.conf:/etc/rabbitmq/conf.d/90-guest.conf:ro
     healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_port_connectivity']
+      # A plain port probe. rabbitmq-diagnostics runs as root, and if it
+      # fires before the broker has written its Erlang cookie it creates one
+      # the broker cannot read, and the broker fails to boot.
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '5672']
       <<: *health
 
   # Accepts SMTP and keeps every message, with an HTTP API the specs read to

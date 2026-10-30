@@ -123,7 +123,7 @@ describe('Stripe webhooks', () => {
         object: 'payment_intent',
         metadata: { reservationId: String(reservation.id) },
       },
-      'whsec_guessed',
+      'wrong-webhook-secret',
     );
 
     expect(response.status).toBe(400);
