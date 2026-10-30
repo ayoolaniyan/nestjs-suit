@@ -23,6 +23,27 @@ services:
       timeout: 3s
       retries: 30
 
+  # Management UI at http://localhost:15672 (the default guest account),
+  # for watching the notifications queues.
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    ports:
+      - '127.0.0.1:5672:5672'
+      - '127.0.0.1:15672:15672'
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+      - ./docker/rabbitmq/guest-from-network.conf:/etc/rabbitmq/conf.d/90-guest.conf:ro
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_port_connectivity']
+      <<: *http-health
+
+  # Catches every email sent in development; read them at
+  # http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports:
+      - '127.0.0.1:8025:8025'
+
   reservations:
     build:
       context: .
@@ -35,10 +56,10 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       auth:
         condition: service_healthy
-      payments:
-        condition: service_started
     ports:
       - '3000:3000'
       - '9229:9229'
@@ -78,9 +99,9 @@ services:
     env_file:
       - ./.env
       - ./apps/payments/.env
-    depends_on:
-      notifications:
-        condition: service_started
+    ports:
+      # Stripe webhooks: `stripe listen --forward-to localhost:3006/payments/webhook`.
+      - '3006:3006'
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules
@@ -94,9 +115,15 @@ services:
     env_file:
       - ./.env
       - ./apps/notifications/.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules
 
 volumes:
   database:
+  rabbitmq:

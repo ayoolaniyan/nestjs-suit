@@ -6,23 +6,33 @@ x-service: &service
   env_file:
     - ./env/shared.env
 
-x-tcp-health: &tcp-health
+x-health: &health
   interval: 3s
   timeout: 3s
   retries: 40
+
+# The services' own /health/ready, probed from inside the container.
+x-ready: &ready
+  test: ['CMD-SHELL', "node -e \"fetch('http://localhost:' + process.env.HTTP_PORT + '/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))\""]
+  <<: *health
 
 services:
   e2e:
     build:
       context: .
       dockerfile: ./Dockerfile
-    # Database credentials, for the specs that set up state directly.
+    # Database credentials and the webhook secret, for the specs that set up
+    # state directly or play Stripe.
     env_file:
       - ./env/shared.env
     depends_on:
       reservations:
         condition: service_healthy
       auth:
+        condition: service_healthy
+      payments:
+        condition: service_healthy
+      notifications:
         condition: service_healthy
     volumes:
       - ./specs:/usr/src/app/specs
@@ -35,9 +45,23 @@ services:
     # the migrations build the schema from scratch.
     healthcheck:
       test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" --silent']
-      interval: 3s
-      timeout: 3s
-      retries: 40
+      <<: *health
+
+  rabbitmq:
+    image: rabbitmq:4.1-alpine
+    volumes:
+      - ../docker/rabbitmq/guest-from-network.conf:/etc/rabbitmq/conf.d/90-guest.conf:ro
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_port_connectivity']
+      <<: *health
+
+  # Accepts SMTP and keeps every message, with an HTTP API the specs read to
+  # check that emails were sent.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      <<: *health
 
   auth:
     <<: *service
@@ -50,9 +74,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost:3001/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
-      <<: *tcp-health
+    healthcheck: *ready
 
   reservations:
     <<: *service
@@ -60,18 +82,17 @@ services:
       context: ..
       dockerfile: ./apps/reservations/Dockerfile
     environment:
-      PORT: 3000
+      HTTP_PORT: 3000
+      TCP_PORT: 3005
       SWAGGER_ENABLED: 'true'
     depends_on:
       mysql:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       auth:
         condition: service_healthy
-      payments:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
-      <<: *tcp-health
+    healthcheck: *ready
 
   payments:
     <<: *service
@@ -79,13 +100,9 @@ services:
       context: ..
       dockerfile: ./apps/payments/Dockerfile
     environment:
-      PORT: 3003
-    depends_on:
-      notifications:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD', 'node', '-e', "require('net').connect(3003, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
-      <<: *tcp-health
+      HTTP_PORT: 3006
+      TCP_PORT: 3003
+    healthcheck: *ready
 
   notifications:
     <<: *service
@@ -93,7 +110,10 @@ services:
       context: ..
       dockerfile: ./apps/notifications/Dockerfile
     environment:
-      PORT: 3004
-    healthcheck:
-      test: ['CMD', 'node', '-e', "require('net').connect(3004, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
-      <<: *tcp-health
+      HTTP_PORT: 3004
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    healthcheck: *ready

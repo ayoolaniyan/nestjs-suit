@@ -4,12 +4,14 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UsersService } from '../users/users.service';
 import { TokenPayload } from '../interfaces/token-payload.interface';
+import { SessionsService } from '../sessions/sessions.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     configService: ConfigService,
     private readonly userService: UsersService,
+    private readonly sessionsService: SessionsService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -23,8 +25,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       secretOrKey: configService.get('JWT_SECRET'),
     });
   }
-  async validate({ userId }: TokenPayload) {
-    if (!userId) {
+
+  /**
+   * A valid signature is not enough: the token's session must still be
+   * active, so logging out rejects the token immediately. Tokens issued
+   * before sessions existed carry no `sid` and are refused.
+   */
+  async validate({ userId, sid }: TokenPayload) {
+    if (
+      !userId ||
+      !sid ||
+      !(await this.sessionsService.isActive(sid, userId))
+    ) {
       throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
     }
     return this.userService.getUser({ id: userId });

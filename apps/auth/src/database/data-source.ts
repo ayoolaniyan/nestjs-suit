@@ -6,6 +6,7 @@
 import { DataSource } from 'typeorm';
 import { Role, User } from '@app/common';
 import { authDatabaseOptions } from './database.options';
+import { Session } from '../sessions/session.entity';
 
 export default new DataSource({
   type: 'mysql',
@@ -14,6 +15,6 @@ export default new DataSource({
   database: process.env.MYSQL_DATABASE,
   username: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
-  entities: [User, Role],
+  entities: [User, Role, Session],
   ...authDatabaseOptions,
 });

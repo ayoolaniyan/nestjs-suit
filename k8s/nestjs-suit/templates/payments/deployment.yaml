@@ -13,26 +13,37 @@ spec:
     metadata:
       labels:
         app: payments
+      annotations:
+        {{- include "nestjs-suit.metricsAnnotations" (dict "port" .Values.ports.paymentsHttp) | nindent 8 }}
     spec:
       containers:
         - image: {{ include "nestjs-suit.image" (dict "root" . "name" "payments") }}
           name: payments
           env:
-            - name: PORT
-              value: {{ .Values.ports.payments | quote }}
-            - name: NOTIFICATION_HOST
-              value: notifications
-            - name: NOTIFICATION_PORT
-              value: {{ .Values.ports.notifications | quote }}
+            - name: HTTP_PORT
+              value: {{ .Values.ports.paymentsHttp | quote }}
+            - name: TCP_PORT
+              value: {{ .Values.ports.paymentsTcp | quote }}
+            - name: RESERVATIONS_HOST
+              value: reservations-tcp
+            - name: RESERVATIONS_PORT
+              value: {{ .Values.ports.reservationsTcp | quote }}
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.stripe.secretName }}
                   key: apiKey
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.stripe.secretName }}
+                  key: webhookSecret
           ports:
+            - name: http
+              containerPort: {{ .Values.ports.paymentsHttp }}
             - name: tcp
-              containerPort: {{ .Values.ports.payments }}
-          {{- include "nestjs-suit.tcpProbes" . | nindent 10 }}
+              containerPort: {{ .Values.ports.paymentsTcp }}
+          {{- include "nestjs-suit.httpProbes" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- include "nestjs-suit.securityContext" . | nindent 10 }}

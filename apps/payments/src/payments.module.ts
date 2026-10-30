@@ -1,10 +1,14 @@
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { WebhooksController } from './webhooks.controller';
 import {
+  AllExceptionsFilter,
+  HealthModule,
   LoggerModule,
-  NOTIFICATION_SERVICE,
+  MetricsModule,
+  RESERVATIONS_SERVICE,
   RpcRequestContextInterceptor,
 } from '@app/common';
 import * as Joi from 'joi';
@@ -14,34 +18,43 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 @Module({
   imports: [
     LoggerModule,
+    // Stripe is not checked: an outage there is reported per charge, and
+    // taking payments out of service would not help.
+    HealthModule.forRoot(),
+    MetricsModule,
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
-        PORT: Joi.number().required(),
+        HTTP_PORT: Joi.number().required(),
+        TCP_PORT: Joi.number().required(),
         STRIPE_SECRET_KEY: Joi.string().required(),
-        NOTIFICATION_HOST: Joi.string().required(),
-        NOTIFICATION_PORT: Joi.number().required(),
+        // The endpoint's signing secret (whsec_...), from the Stripe
+        // dashboard or `stripe listen`.
+        STRIPE_WEBHOOK_SECRET: Joi.string().required(),
+        RESERVATIONS_HOST: Joi.string().required(),
+        RESERVATIONS_PORT: Joi.number().required(),
       }),
     }),
     ClientsModule.registerAsync([
       {
-        name: NOTIFICATION_SERVICE,
+        name: RESERVATIONS_SERVICE,
         useFactory: async (configService: ConfigService) => ({
           transport: Transport.TCP,
           options: {
-            host: configService.get<string>('NOTIFICATION_HOST'),
-            port: configService.get<number>('NOTIFICATION_PORT'),
+            host: configService.get<string>('RESERVATIONS_HOST'),
+            port: configService.get<number>('RESERVATIONS_PORT'),
           },
         }),
         inject: [ConfigService],
       },
     ]),
   ],
-  controllers: [PaymentsController],
+  controllers: [PaymentsController, WebhooksController],
   providers: [
     PaymentsService,
-    // Module-level, so it also applies to the TCP handlers.
+    // Module-level, so they also apply to the TCP handlers.
     { provide: APP_INTERCEPTOR, useClass: RpcRequestContextInterceptor },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })
 export class PaymentsModule {}

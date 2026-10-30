@@ -27,7 +27,8 @@ jobs:
 
       - run: pnpm run typecheck
 
-      - run: pnpm test
+      # Fails under the coverage floor set in package.json's jest config.
+      - run: pnpm run test:cov
 
       # Compiles all four services; `nest build` alone builds only the
       # default project.
@@ -64,8 +65,13 @@ jobs:
         run: |
           VALUES="--set global.imageRegistry=123456789012.dkr.ecr.us-east-1.amazonaws.com \
             --set mysql.host=db.example.com \
-            --set notifications.smtpUser=ci@example.com \
-            --set notifications.googleOAuthClientId=ci"
+            --set notifications.mailFrom=ci@example.com \
+            --set notifications.smtp.host=smtp.example.com"
           helm lint k8s/nestjs-suit $VALUES
           helm template ci k8s/nestjs-suit $VALUES > rendered.yaml
-          docker run --rm -v "$PWD:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary /work/rendered.yaml
+          # The other mail transport, and SMTP with credentials.
+          helm template ci k8s/nestjs-suit $VALUES --set notifications.transport=gmail \
+            --set notifications.gmail.user=ci@example.com --set notifications.gmail.clientId=ci > rendered-gmail.yaml
+          helm template ci k8s/nestjs-suit $VALUES --set notifications.smtp.user=ci > rendered-smtp-auth.yaml
+          docker run --rm -v "$PWD:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary \
+            /work/rendered.yaml /work/rendered-gmail.yaml /work/rendered-smtp-auth.yaml

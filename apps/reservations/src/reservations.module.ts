@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ReservationsService } from './reservations.service';
 import { ReservationsController } from './reservations.controller';
 import {
@@ -9,6 +10,14 @@ import {
   PAYMENTS_SERVICE,
   HealthModule,
   MetricsModule,
+  AllExceptionsFilter,
+  httpSecurityValidationSchema,
+  HttpThrottlerGuard,
+  NOTIFICATION_SERVICE,
+  notificationsRmqOptions,
+  rabbitmqValidationSchema,
+  rateLimitingModule,
+  RpcRequestContextInterceptor,
 } from '@app/common';
 import { ReservationsRepository } from './reservations.repository';
 import { Reservation } from './models/reservation.entity';
@@ -20,11 +29,12 @@ import { Place } from './places/place.entity';
 import { PlacesController } from './places/places.controller';
 import { PlacesService } from './places/places.service';
 import { PlacesRepository } from './places/places.repository';
+import { PaymentEventsController } from './payment-events.controller';
 
 @Module({
   imports: [
     DatabaseModule.forRoot(reservationsDatabaseOptions),
-    HealthModule,
+    HealthModule.forRoot({ database: true }),
     DatabaseModule.forFeature([Reservation, Place]),
     MetricsModule,
     LoggerModule,
@@ -32,7 +42,11 @@ import { PlacesRepository } from './places/places.repository';
       isGlobal: true,
       validationSchema: Joi.object({
         ...databaseValidationSchema,
-        PORT: Joi.number().required(),
+        ...httpSecurityValidationSchema,
+        ...rabbitmqValidationSchema,
+        HTTP_PORT: Joi.number().required(),
+        // Receives payment outcomes from payments.
+        TCP_PORT: Joi.number().required(),
         AUTH_HOST: Joi.string().required(),
         AUTH_PORT: Joi.number().required(),
         PAYMENTS_HOST: Joi.string().required(),
@@ -40,6 +54,7 @@ import { PlacesRepository } from './places/places.repository';
         SWAGGER_ENABLED: Joi.boolean(),
       }),
     }),
+    rateLimitingModule(),
     ClientsModule.registerAsync([
       {
         name: AUTH_SERVICE,
@@ -63,14 +78,27 @@ import { PlacesRepository } from './places/places.repository';
         }),
         inject: [ConfigService],
       },
+      {
+        name: NOTIFICATION_SERVICE,
+        useFactory: notificationsRmqOptions,
+        inject: [ConfigService],
+      },
     ]),
   ],
-  controllers: [ReservationsController, PlacesController],
+  controllers: [
+    ReservationsController,
+    PlacesController,
+    PaymentEventsController,
+  ],
   providers: [
     ReservationsService,
     ReservationsRepository,
     PlacesService,
     PlacesRepository,
+    // Module-level, so they also apply to the TCP handlers.
+    { provide: APP_INTERCEPTOR, useClass: RpcRequestContextInterceptor },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_GUARD, useClass: HttpThrottlerGuard },
   ],
 })
 export class ReservationsModule {}

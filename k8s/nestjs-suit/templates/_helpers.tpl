@@ -62,15 +62,21 @@ readinessProbe:
   periodSeconds: 5
 {{- end }}
 
-{{/* The TCP-only services have no HTTP server, so probe the socket. */}}
-{{- define "nestjs-suit.tcpProbes" -}}
-livenessProbe:
-  tcpSocket:
-    port: tcp
-  initialDelaySeconds: 10
-  periodSeconds: 10
-readinessProbe:
-  tcpSocket:
-    port: tcp
-  periodSeconds: 5
+{{/* Security settings for the public HTTP services. */}}
+{{- define "nestjs-suit.securityEnv" -}}
+- name: CORS_ORIGINS
+  value: {{ .Values.security.corsOrigins | quote }}
+- name: TRUST_PROXY_HOPS
+  value: {{ .Values.security.trustProxyHops | quote }}
+- name: RATE_LIMIT_PER_MINUTE
+  value: {{ .Values.security.rateLimitPerMinute | quote }}
+{{- end }}
+
+{{/* RabbitMQ connection, from its Secret. */}}
+{{- define "nestjs-suit.rabbitmqEnv" -}}
+- name: RABBITMQ_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.rabbitmq.secretName }}
+      key: url
 {{- end }}

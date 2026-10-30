@@ -1,8 +1,8 @@
 # nestjs-suit
 
 A NestJS monorepo of four services — **auth**, **reservations**, **payments**
-and **notifications** — communicating over TCP, sharing a `libs/common`
-package, and deployed to Kubernetes via Helm.
+and **notifications** — communicating over TCP and RabbitMQ, sharing a
+`libs/common` package, and deployed to Kubernetes via Helm.
 
 ## Provenance
 
@@ -80,14 +80,15 @@ npm scripts pointing at a `dist/apps/sleepr` path that does not exist.
 
 | Service | Transport | Responsibility |
 | --- | --- | --- |
-| `auth` | HTTP + TCP | Login, user management, token issuing; answers `authenticate` over TCP |
-| `reservations` | HTTP | Places, availability, booking and cancellation; calls `payments` to charge and refund |
-| `payments` | TCP | Stripe charges and refunds; emits `notify_email` |
-| `notifications` | TCP | Sends email via nodemailer |
+| `auth` | HTTP + TCP | Signup, login, sessions and refresh tokens; answers `authenticate` over TCP |
+| `reservations` | HTTP + TCP | Places, availability, booking and cancellation; calls `payments` to charge and refund, receives payment outcomes, queues booking emails |
+| `payments` | TCP + HTTP | Stripe charges and refunds; receives Stripe webhooks and relays the outcome to `reservations` |
+| `notifications` | RabbitMQ | Consumes the `notifications` queue and sends email (SMTP or Gmail) |
 
 `libs/common` holds what they share: the abstract entity and repository, the
 JWT guard, the `@CurrentUser` decorator, logging, health, metrics, request
-context and Swagger setup.
+context, Swagger setup, the exception filter, HTTP security and rate
+limiting, and the queue and message contracts.
 
 ## Booking
 
@@ -118,6 +119,60 @@ Rules worth knowing:
 - **Retries are safe** with an `Idempotency-Key` header: a repeat returns the
   confirmed booking, or retries a pending one's charge under the same Stripe
   idempotency key, so the card is never charged twice.
+- **Stripe webhooks settle what a timeout left open.** Each PaymentIntent
+  carries its reservation id. `payment_intent.succeeded` confirms a pending
+  booking and `payment_intent.payment_failed` releases its dates, whichever
+  of the webhook and the charge reply arrives first; repeats change nothing.
+  A payment that lands after its hold lapsed and the dates were rebooked is
+  refunded rather than double-booked. Payments answers Stripe with an error
+  when reservations cannot record an outcome, so Stripe redelivers.
+- **Emails follow the booking, not the charge**: one when it is confirmed,
+  one when it is cancelled.
+
+## Sessions and security
+
+- **Short access tokens, rotating refresh tokens.** Login sets an
+  `Authentication` cookie (the JWT, `JWT_EXPIRATION`, 15 minutes in Helm)
+  and a `Refresh` cookie scoped to `/auth` (`REFRESH_TOKEN_EXPIRATION`, 30
+  days). `POST /auth/refresh` swaps the refresh token for a new one; each
+  works once, and presenting a used one revokes the whole session, on the
+  assumption that someone copied it. Only a SHA-256 hash of the refresh
+  token is stored.
+- **Logout takes effect at once.** Access tokens name their session, and
+  every `authenticate` checks the session is still active, so
+  `POST /auth/logout` (this device) and `POST /auth/logout-all` (every
+  device) reject outstanding tokens immediately.
+- **Cookies** are `HttpOnly`, `Secure` in production (`COOKIE_SECURE`), and
+  `SameSite=Lax` (`Strict` for the refresh cookie), which stops other sites
+  booking with a user's cookie.
+- **Rate limits.** Every public route is limited per client address
+  (`RATE_LIMIT_PER_MINUTE`); login is also limited per address and email
+  (`LOGIN_ATTEMPTS_PER_15_MIN`), so one account's password cannot be
+  guessed quickly. Set `TRUST_PROXY_HOPS` behind a load balancer (Helm does,
+  for the ALB) so the limit sees the client, not the balancer. Counters are
+  per replica.
+- **Headers and CORS.** helmet sets the usual security headers. Cross-origin
+  calls are refused unless their origin is in `CORS_ORIGINS`.
+- **One error shape.** Every HTTP error is
+  `{ statusCode, error, message, requestId }`, and every RPC error reply is
+  `{ status, message }`, so a refused token over TCP is a 401 rather than an
+  opaque "Internal server error". Unexpected errors are logged with their
+  stack and reported as a plain 500.
+
+## Email delivery
+
+Booking emails go from reservations to notifications through RabbitMQ, so
+they survive notifications being down or restarting.
+
+- Messages are persistent and published with broker confirmation; the
+  consumer acknowledges only after the mail server accepts the email.
+- A failed send is moved to `notifications.retry`, which returns it after 60
+  seconds, up to `MAIL_MAX_ATTEMPTS` (5) attempts in all.
+- Messages that run out of attempts, or are invalid, are parked in
+  `notifications.dead` for inspection or replay.
+- Wording lives in notifications' templates (`booking_confirmed`,
+  `booking_cancelled`); senders supply only data. `MAIL_TRANSPORT` is `smtp`
+  (Amazon SES's SMTP interface in production, Mailpit locally) or `gmail`.
 
 ## Observability
 
@@ -125,7 +180,7 @@ Rules worth knowing:
   if it sent a well-formed one). The id is forwarded over TCP and appears as
   `requestId` on every log line it causes, in every service, so one search
   follows a request from reservations through auth and payments.
-- **Metrics.** auth and reservations serve Prometheus metrics at `/metrics`
+- **Metrics.** auth, reservations and payments serve Prometheus metrics at `/metrics`
   (not routed by the ingress): `http_request_duration_seconds` by route
   template, `rpc_client_duration_seconds` by message pattern and outcome
   (which is how payments' latency is measured), and process metrics.
@@ -143,9 +198,17 @@ done
 docker compose up
 ```
 
-Ports: reservations `3000` (HTTP), auth `3001` (HTTP) and `3002` (TCP),
-payments `3003` (TCP), notifications `3004` (TCP). `/health` (liveness) and
-`/health/ready` (database ping) are served by auth and reservations.
+Ports: reservations `3000` (HTTP) and `3005` (TCP), auth `3001` (HTTP) and
+`3002` (TCP), payments `3006` (HTTP) and `3003` (TCP), notifications `3004`
+(HTTP, health only). Every service serves `/health` (liveness) and
+`/health/ready`, which checks the database for auth and reservations and
+RabbitMQ for notifications.
+
+Compose also starts RabbitMQ (management UI at http://localhost:15672) and
+Mailpit, which catches every email sent (http://localhost:8025). To try
+webhooks locally, run
+`stripe listen --forward-to localhost:3006/payments/webhook` and put the
+secret it prints in `STRIPE_WEBHOOK_SECRET`.
 
 ## Database
 
@@ -178,15 +241,20 @@ SELECT <user id>, id FROM role WHERE name = 'Admin';
 
 ```bash
 pnpm test           # unit tests
+pnpm run test:cov   # with coverage, failing under the floor in package.json
 pnpm run lint
 pnpm run typecheck
 pnpm run test:e2e   # builds the production images and runs the suite against them
 ```
 
-GitHub Actions runs lint, the type check, unit tests and a build of all four
-services on every push, then the e2e suite against images built from that
-commit with a fresh MySQL, and a Helm lint plus schema validation of the
-rendered manifests.
+GitHub Actions runs lint, the type check, unit tests with the coverage floor
+and a build of all four services on every push, then the e2e suite against
+images built from that commit with a fresh MySQL, RabbitMQ and Mailpit, and
+a Helm lint plus schema validation of the rendered manifests.
+
+The e2e stack has no real Stripe key, so charges fail upstream and bookings
+stay pending; the suite then plays Stripe, delivering signed webhooks, and
+checks the confirmation email arrives in Mailpit.
 
 ## Deployment
 
@@ -199,13 +267,18 @@ helm upgrade --install nestjs-suit k8s/nestjs-suit \
   --set global.imageRegistry=<account>.dkr.ecr.<region>.amazonaws.com \
   --set global.imageTag=<commit sha> \
   --set mysql.host=<database endpoint> \
-  --set notifications.smtpUser=<sender address> \
-  --set notifications.googleOAuthClientId=<client id>
+  --set notifications.mailFrom=<sender address> \
+  --set notifications.smtp.host=email-smtp.<region>.amazonaws.com \
+  --set notifications.smtp.user=<SES SMTP user>
 ```
 
 The chart expects these Secrets to exist: `mysql` (`username`, `password`),
-`jwt` (`jwtSecret`), `stripe` (`apiKey`) and `google` (`clientSecret`,
-`refreshToken`). See `values.yaml` for everything else.
+`jwt` (`jwtSecret`), `stripe` (`apiKey`, `webhookSecret`), `rabbitmq`
+(`url`, e.g. an Amazon MQ `amqps://` URL) and `smtp` (`password`), or
+`google` (`clientSecret`, `refreshToken`) with `notifications.transport=gmail`.
+Register `https://<host>/payments/webhook` in Stripe for
+`payment_intent.succeeded` and `payment_intent.payment_failed`. See
+`values.yaml` for everything else.
 
 ## Licence
 
