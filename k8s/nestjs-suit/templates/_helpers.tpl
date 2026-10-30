@@ -34,6 +34,13 @@ securityContext:
   allowPrivilegeEscalation: false
 {{- end }}
 
+{{/* Pod annotations for the HTTP services, which serve /metrics. */}}
+{{- define "nestjs-suit.metricsAnnotations" -}}
+prometheus.io/scrape: 'true'
+prometheus.io/path: /metrics
+prometheus.io/port: {{ .port | quote }}
+{{- end }}
+
 {{/* HTTP probes against the terminus endpoints in libs/common/health. */}}
 {{- define "nestjs-suit.httpProbes" -}}
 startupProbe:

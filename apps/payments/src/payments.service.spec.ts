@@ -11,12 +11,20 @@ jest.mock('stripe', () => {
   class StripeError extends Error {}
   class StripeCardError extends StripeError {}
   class StripeInvalidRequestError extends StripeError {}
+  class StripeIdempotencyError extends StripeError {}
   const Stripe = Object.assign(
     jest.fn().mockImplementation(() => ({
       paymentIntents: { create: paymentIntentsCreate },
       refunds: { create: refundsCreate },
     })),
-    { errors: { StripeError, StripeCardError, StripeInvalidRequestError } },
+    {
+      errors: {
+        StripeError,
+        StripeCardError,
+        StripeInvalidRequestError,
+        StripeIdempotencyError,
+      },
+    },
   );
   return { Stripe };
 });
@@ -30,7 +38,7 @@ describe('PaymentsService', () => {
   let notifications: { emit: jest.Mock };
 
   const charge = {
-    amount: 5,
+    amountCents: 500,
     email: 'user@example.com',
     paymentMethodId: 'pm_from_client',
   };
@@ -64,9 +72,8 @@ describe('PaymentsService', () => {
     );
   });
 
-  it('converts dollars to a whole number of cents', async () => {
-    // 19.99 * 100 is 1998.9999999999998 in floating point.
-    await service.createCharge({ ...charge, amount: 19.99 });
+  it('charges the amount in cents as given', async () => {
+    await service.createCharge({ ...charge, amountCents: 1999 });
 
     expect(paymentIntentsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 1999 }),
@@ -106,6 +113,16 @@ describe('PaymentsService', () => {
     expect(notifications.emit).not.toHaveBeenCalled();
   });
 
+  it('reports a reused idempotency key as a 409', async () => {
+    paymentIntentsCreate.mockRejectedValue(
+      new Stripe.errors.StripeIdempotencyError('Keys reused.'),
+    );
+
+    const error = await service.createCharge(charge).catch((e) => e);
+
+    expect(error.getError()).toMatchObject({ status: 409 });
+  });
+
   it('does not leak unexpected provider errors to the caller', async () => {
     paymentIntentsCreate.mockRejectedValue(new Error('socket hang up'));
 
@@ -117,9 +134,15 @@ describe('PaymentsService', () => {
     });
   });
 
-  it('refunds a payment intent', async () => {
-    await service.refundCharge({ paymentIntentId: 'pi_123' });
+  it('refunds a payment intent under the given idempotency key', async () => {
+    await service.refundCharge({
+      paymentIntentId: 'pi_123',
+      idempotencyKey: 'reservation-5-refund',
+    });
 
-    expect(refundsCreate).toHaveBeenCalledWith({ payment_intent: 'pi_123' });
+    expect(refundsCreate).toHaveBeenCalledWith(
+      { payment_intent: 'pi_123' },
+      { idempotencyKey: 'reservation-5-refund' },
+    );
   });
 });

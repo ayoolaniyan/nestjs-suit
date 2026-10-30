@@ -7,3 +7,5 @@ export * from './dto';
 export * from './models';
 export * from './health';
 export * from './pipes';
+export * from './observability';
+export * from './swagger';

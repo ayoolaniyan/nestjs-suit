@@ -5,13 +5,19 @@ import { CurrentUser, User } from '@app/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { LoginDto } from './dto/login.dto';
+import { ApiBody, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /** Sets the Authentication cookie and returns the user. */
   @UseGuards(LocalAuthGuard)
   @Post('login')
+  @ApiBody({ type: LoginDto })
+  @ApiUnauthorizedResponse({ description: 'Credentials are not valid.' })
   async login(
     @CurrentUser() user: User,
     @Res({ passthrough: true }) response: Response,

@@ -8,7 +8,7 @@ describe('RpcValidationPipe', () => {
 
   it('raises an RpcException with a 400 status for invalid input', async () => {
     const error = await pipe
-      .transform({ paymentMethodId: 'pm_1', amount: 10.001 }, metadata)
+      .transform({ paymentMethodId: 'pm_1', amountCents: 10.5 }, metadata)
       .catch((e) => e);
 
     expect(error).toBeInstanceOf(RpcException);
@@ -17,13 +17,13 @@ describe('RpcValidationPipe', () => {
 
   it('rejects amounts below the Stripe minimum', async () => {
     await expect(
-      pipe.transform({ paymentMethodId: 'pm_1', amount: 0.1 }, metadata),
+      pipe.transform({ paymentMethodId: 'pm_1', amountCents: 49 }, metadata),
     ).rejects.toBeInstanceOf(RpcException);
   });
 
   it('passes valid input through', async () => {
     await expect(
-      pipe.transform({ paymentMethodId: 'pm_1', amount: 19.99 }, metadata),
-    ).resolves.toMatchObject({ amount: 19.99 });
+      pipe.transform({ paymentMethodId: 'pm_1', amountCents: 1999 }, metadata),
+    ).resolves.toMatchObject({ amountCents: 1999 });
   });
 });

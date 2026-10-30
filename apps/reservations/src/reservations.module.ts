@@ -8,6 +8,7 @@ import {
   AUTH_SERVICE,
   PAYMENTS_SERVICE,
   HealthModule,
+  MetricsModule,
 } from '@app/common';
 import { ReservationsRepository } from './reservations.repository';
 import { Reservation } from './models/reservation.entity';
@@ -15,12 +16,17 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as Joi from 'joi';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { reservationsDatabaseOptions } from './database/database.options';
+import { Place } from './places/place.entity';
+import { PlacesController } from './places/places.controller';
+import { PlacesService } from './places/places.service';
+import { PlacesRepository } from './places/places.repository';
 
 @Module({
   imports: [
     DatabaseModule.forRoot(reservationsDatabaseOptions),
     HealthModule,
-    DatabaseModule.forFeature([Reservation]),
+    DatabaseModule.forFeature([Reservation, Place]),
+    MetricsModule,
     LoggerModule,
     ConfigModule.forRoot({
       isGlobal: true,
@@ -31,6 +37,7 @@ import { reservationsDatabaseOptions } from './database/database.options';
         AUTH_PORT: Joi.number().required(),
         PAYMENTS_HOST: Joi.string().required(),
         PAYMENTS_PORT: Joi.number().required(),
+        SWAGGER_ENABLED: Joi.boolean(),
       }),
     }),
     ClientsModule.registerAsync([
@@ -58,7 +65,12 @@ import { reservationsDatabaseOptions } from './database/database.options';
       },
     ]),
   ],
-  controllers: [ReservationsController],
-  providers: [ReservationsService, ReservationsRepository],
+  controllers: [ReservationsController, PlacesController],
+  providers: [
+    ReservationsService,
+    ReservationsRepository,
+    PlacesService,
+    PlacesRepository,
+  ],
 })
 export class ReservationsModule {}

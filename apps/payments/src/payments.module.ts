@@ -1,7 +1,12 @@
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
-import { LoggerModule, NOTIFICATION_SERVICE } from '@app/common';
+import {
+  LoggerModule,
+  NOTIFICATION_SERVICE,
+  RpcRequestContextInterceptor,
+} from '@app/common';
 import * as Joi from 'joi';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
@@ -33,6 +38,10 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
     ]),
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService],
+  providers: [
+    PaymentsService,
+    // Module-level, so it also applies to the TCP handlers.
+    { provide: APP_INTERCEPTOR, useClass: RpcRequestContextInterceptor },
+  ],
 })
 export class PaymentsModule {}
