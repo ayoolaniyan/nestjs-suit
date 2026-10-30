@@ -1,3 +1,4 @@
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -6,6 +7,8 @@ import {
   databaseValidationSchema,
   HealthModule,
   LoggerModule,
+  MetricsModule,
+  RpcRequestContextInterceptor,
 } from '@app/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -18,6 +21,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     UsersModule,
     LoggerModule,
     HealthModule,
+    MetricsModule,
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
@@ -26,6 +30,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         JWT_EXPIRATION: Joi.number().required(),
         HTTP_PORT: Joi.number().required(),
         TCP_PORT: Joi.number().required(),
+        SWAGGER_ENABLED: Joi.boolean(),
       }),
     }),
     JwtModule.registerAsync({
@@ -43,6 +48,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, JwtStrategy],
+  providers: [
+    AuthService,
+    LocalStrategy,
+    JwtStrategy,
+    // Module-level, so it also applies to the TCP handlers.
+    { provide: APP_INTERCEPTOR, useClass: RpcRequestContextInterceptor },
+  ],
 })
 export class AuthModule {}

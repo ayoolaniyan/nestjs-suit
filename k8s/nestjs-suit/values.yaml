@@ -36,6 +36,10 @@ notifications:
   # Secret with `clientSecret` and `refreshToken` keys.
   googleSecretName: google
 
+# Serves OpenAPI docs at /auth/docs and /reservations/docs. Off by default:
+# publishing the API surface of a production deployment is an opt-in.
+swaggerEnabled: false
+
 # auth and reservations apply their database migrations at startup. Keep them
 # at one replica unless migrations move to a separate job, or two pods may
 # race to apply the same one.

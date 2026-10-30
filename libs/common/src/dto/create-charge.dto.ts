@@ -1,5 +1,6 @@
-import { IsNotEmpty, IsNumber, IsString, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 
+/** The create_charge message contract between reservations and payments. */
 export class CreateChargeDto {
   // A Stripe PaymentMethod id (pm_...) created on the client with Stripe.js /
   // Elements. Raw card numbers must never reach these services: handling them
@@ -8,9 +9,9 @@ export class CreateChargeDto {
   @IsNotEmpty()
   paymentMethodId: string;
 
-  // In dollars. At most two decimal places, so it converts to a whole number
-  // of cents exactly; 0.50 is Stripe's minimum USD charge.
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.5)
-  amount: number;
+  // Whole US cents, computed by reservations from the place's price, so no
+  // floating-point conversion happens anywhere. 50 is Stripe's minimum.
+  @IsInt()
+  @Min(50)
+  amountCents: number;
 }

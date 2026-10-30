@@ -13,12 +13,16 @@ spec:
     metadata:
       labels:
         app: reservations
+      annotations:
+        {{- include "nestjs-suit.metricsAnnotations" (dict "port" .Values.ports.reservations) | nindent 8 }}
     spec:
       containers:
         - image: {{ include "nestjs-suit.image" (dict "root" . "name" "reservations") }}
           name: reservations
           env:
             {{- include "nestjs-suit.mysqlEnv" . | nindent 12 }}
+            - name: SWAGGER_ENABLED
+              value: {{ .Values.swaggerEnabled | quote }}
             - name: PORT
               value: {{ .Values.ports.reservations | quote }}
             - name: AUTH_HOST

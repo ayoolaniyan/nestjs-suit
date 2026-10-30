@@ -20,6 +20,8 @@ import { ClientProxy } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
 import { AUTH_SERVICE } from '../constants/services';
 import { User } from '../models/user.entity';
+import { observeRpc } from '../observability/metrics';
+import { withRequestId } from '../observability/request-context';
 
 // Without a timeout a stalled auth service holds every authenticated request
 // open indefinitely.
@@ -52,9 +54,10 @@ export class JwtAuthGuard implements CanActivate {
     );
 
     return this.authClient
-      .send<User>('authenticate', { Authentication: jwt })
+      .send<User>('authenticate', withRequestId({ Authentication: jwt }))
       .pipe(
         timeout(AUTH_TIMEOUT_MS),
+        observeRpc('authenticate'),
         catchError((error) => throwError(() => this.toHttpError(error))),
         // After catchError, so a missing role stays a 403 rather than being
         // folded into the authentication failure above.

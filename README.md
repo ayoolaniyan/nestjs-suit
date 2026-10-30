@@ -81,12 +81,57 @@ npm scripts pointing at a `dist/apps/sleepr` path that does not exist.
 | Service | Transport | Responsibility |
 | --- | --- | --- |
 | `auth` | HTTP + TCP | Login, user management, token issuing; answers `authenticate` over TCP |
-| `reservations` | HTTP | Reservation CRUD; calls `payments` to create a charge |
-| `payments` | TCP | Stripe charge creation; emits `notify_email` |
+| `reservations` | HTTP | Places, availability, booking and cancellation; calls `payments` to charge and refund |
+| `payments` | TCP | Stripe charges and refunds; emits `notify_email` |
 | `notifications` | TCP | Sends email via nodemailer |
 
 `libs/common` holds what they share: the abstract entity and repository, the
-JWT guard, the `@CurrentUser` decorator, config, logging and health modules.
+JWT guard, the `@CurrentUser` decorator, logging, health, metrics, request
+context and Swagger setup.
+
+## Booking
+
+Admins list **places**, each with a nightly price in cents. Anyone can browse
+them and ask for availability; a signed-in user books one for whole nights.
+
+| Endpoint | Who | |
+| --- | --- | --- |
+| `POST /places`, `PATCH /places/:id` | admin | list or change a place |
+| `GET /places`, `GET /places/:id` | anyone | browse |
+| `GET /places/:id/availability?from=&to=` | anyone | booked stays in a window (dates only, never who) |
+| `POST /reservations` | user | book `{ placeId, startDate, endDate, paymentMethodId }` |
+| `GET /reservations`, `GET /reservations/:id` | user | own reservations (all, for an admin) |
+| `POST /reservations/:id/cancel` | owner | cancel before check-in, refunded in full |
+| `DELETE /reservations/:id` | admin | delete the record, no refund |
+
+Rules worth knowing:
+
+- **The server prices the stay** (nights × nightly rate). The client never
+  sends an amount. Money is whole cents everywhere.
+- **Dates are calendar dates** (`YYYY-MM-DD`), 1–30 nights, not starting in
+  the past. Check-out day is free for the next check-in.
+- **No double-booking.** A booking is first saved as `pending` inside a
+  transaction that locks the place row and checks for overlaps, and only then
+  charged. A pending booking holds its dates for 15 minutes. A declined card
+  marks it `failed` and frees the dates; a timeout leaves it pending, since
+  the charge may have gone through.
+- **Retries are safe** with an `Idempotency-Key` header: a repeat returns the
+  confirmed booking, or retries a pending one's charge under the same Stripe
+  idempotency key, so the card is never charged twice.
+
+## Observability
+
+- **Request ids.** Every HTTP response carries `x-request-id` (the caller's,
+  if it sent a well-formed one). The id is forwarded over TCP and appears as
+  `requestId` on every log line it causes, in every service, so one search
+  follows a request from reservations through auth and payments.
+- **Metrics.** auth and reservations serve Prometheus metrics at `/metrics`
+  (not routed by the ingress): `http_request_duration_seconds` by route
+  template, `rpc_client_duration_seconds` by message pattern and outcome
+  (which is how payments' latency is measured), and process metrics.
+- **API docs.** OpenAPI at `/reservations/docs` and `/auth/docs` (JSON at
+  `…/docs-json`). On by default outside production; set `SWAGGER_ENABLED`
+  (Helm: `swaggerEnabled`) to change that.
 
 ## Running it
 
@@ -120,7 +165,8 @@ MYSQL_HOST=localhost pnpm typeorm:auth migration:generate \
 (`typeorm:reservations` for the reservations service. The scripts read `.env`;
 variables already set in the shell take precedence.)
 
-**Making an admin.** Signup cannot grant roles. The `Admin` role is created by
+**Making an admin.** Signup cannot grant roles, and only an admin can list
+places. The `Admin` role is created by
 a migration; link a user to it directly:
 
 ```sql

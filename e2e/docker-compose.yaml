@@ -16,6 +16,9 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile
+    # Database credentials, for the specs that set up state directly.
+    env_file:
+      - ./env/shared.env
     depends_on:
       reservations:
         condition: service_healthy
@@ -58,6 +61,7 @@ services:
       dockerfile: ./apps/reservations/Dockerfile
     environment:
       PORT: 3000
+      SWAGGER_ENABLED: 'true'
     depends_on:
       mysql:
         condition: service_healthy

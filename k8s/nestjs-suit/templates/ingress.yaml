@@ -19,6 +19,13 @@ spec:
                 name: reservations
                 port:
                   number: {{ .Values.ports.reservations }}
+          - path: /places
+            pathType: Prefix
+            backend:
+              service:
+                name: reservations
+                port:
+                  number: {{ .Values.ports.reservations }}
           - path: /auth
             pathType: Prefix
             backend:

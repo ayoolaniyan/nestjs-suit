@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: auth
+      annotations:
+        {{- include "nestjs-suit.metricsAnnotations" (dict "port" .Values.ports.authHttp) | nindent 8 }}
     spec:
       containers:
         - image: {{ include "nestjs-suit.image" (dict "root" . "name" "auth") }}
@@ -26,6 +28,8 @@ spec:
                   key: jwtSecret
             - name: JWT_EXPIRATION
               value: {{ .Values.jwt.expirationSeconds | quote }}
+            - name: SWAGGER_ENABLED
+              value: {{ .Values.swaggerEnabled | quote }}
             - name: HTTP_PORT
               value: {{ .Values.ports.authHttp | quote }}
             - name: TCP_PORT

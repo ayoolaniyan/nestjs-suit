@@ -1,10 +1,22 @@
 import { Module } from '@nestjs/common';
 import { LoggerModule as PinoLoggerModule } from 'nestjs-pino';
+import {
+  REQUEST_ID_HEADER,
+  acceptOrCreateRequestId,
+} from '../observability/request-context';
 
 @Module({
   imports: [
     PinoLoggerModule.forRoot({
       pinoHttp: {
+        // requestIdMiddleware has already accepted or created the id; reuse it
+        // so the logged id is the one returned to the client and forwarded
+        // over TCP.
+        genReqId: (req) =>
+          acceptOrCreateRequestId(req.headers[REQUEST_ID_HEADER]),
+        // Same field name the RPC interceptor uses, so one query finds a
+        // request's log lines in every service.
+        customProps: (req) => ({ requestId: req.id }),
         // pino-http logs every request and response header by default, which
         // put the JWT (cookie or header) and the Set-Cookie issued at login
         // into the log stream.

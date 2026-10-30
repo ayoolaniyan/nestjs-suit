@@ -1,3 +1,8 @@
+import {
+  httpMetricsMiddleware,
+  requestIdMiddleware,
+  setupSwagger,
+} from '@app/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AuthModule } from './auth.module';
 import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
@@ -8,6 +13,9 @@ import { Transport, MicroserviceOptions } from '@nestjs/microservices';
 
 async function bootstrap() {
   const app = await NestFactory.create(AuthModule);
+  // First, so every later middleware, guard and log line sees the id.
+  app.use(requestIdMiddleware);
+  app.use(httpMetricsMiddleware);
   const configService = app.get(ConfigService);
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
@@ -30,6 +38,7 @@ async function bootstrap() {
     },
     { inheritAppConfig: true },
   );
+  setupSwagger(app, { title: 'Auth', path: 'auth/docs' });
   await app.startAllMicroservices();
   await app.listen(configService.getOrThrow<number>('HTTP_PORT'));
 }

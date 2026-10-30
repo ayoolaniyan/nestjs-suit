@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Stripe } from 'stripe';
-import { NOTIFICATION_SERVICE } from '@app/common';
+import { NOTIFICATION_SERVICE, withRequestId } from '@app/common';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { PaymentCreateChargeDto } from './dto/payments-create-charge.dto';
 import { RefundChargeDto } from './dto/refund-charge.dto';
@@ -26,7 +26,7 @@ export class PaymentsService {
   }
 
   async createCharge({
-    amount,
+    amountCents,
     email,
     paymentMethodId,
     idempotencyKey,
@@ -35,9 +35,7 @@ export class PaymentsService {
       this.stripe.paymentIntents.create(
         {
           payment_method: paymentMethodId,
-          // Rounded because binary floating point cannot represent most
-          // decimals: 19.99 * 100 is 1998.9999999999998, which Stripe rejects.
-          amount: Math.round(amount * 100),
+          amount: amountCents,
           confirm: true,
           payment_method_types: ['card'],
           currency: 'usd',
@@ -46,16 +44,22 @@ export class PaymentsService {
       ),
     );
 
-    this.notificationService.emit('notify_email', {
-      email,
-      text: `Your payment of $${amount.toFixed(2)} has completed successfully.`,
-    });
+    this.notificationService.emit(
+      'notify_email',
+      withRequestId({
+        email,
+        text: `Your payment of $${(amountCents / 100).toFixed(2)} has completed successfully.`,
+      }),
+    );
     return paymentintent;
   }
 
-  async refundCharge({ paymentIntentId }: RefundChargeDto) {
+  async refundCharge({ paymentIntentId, idempotencyKey }: RefundChargeDto) {
     return this.callStripe(() =>
-      this.stripe.refunds.create({ payment_intent: paymentIntentId }),
+      this.stripe.refunds.create(
+        { payment_intent: paymentIntentId },
+        { idempotencyKey },
+      ),
     );
   }
 
@@ -71,6 +75,14 @@ export class PaymentsService {
       if (error instanceof Stripe.errors.StripeCardError) {
         throw new RpcException({
           status: HttpStatus.PAYMENT_REQUIRED,
+          message: error.message,
+        });
+      }
+      // An idempotency key reused with different parameters, or while the
+      // first request with it is still running.
+      if (error instanceof Stripe.errors.StripeIdempotencyError) {
+        throw new RpcException({
+          status: HttpStatus.CONFLICT,
           message: error.message,
         });
       }

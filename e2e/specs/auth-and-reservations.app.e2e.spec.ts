@@ -1,45 +1,4 @@
-const AUTH = 'http://auth:3001';
-const RESERVATIONS = 'http://reservations:3000';
-
-/**
- * A fresh password per call, generated rather than written out so that no
- * credential-shaped literal sits in the repository. The prefix supplies the
- * uppercase letter, digit and symbol that IsStrongPassword requires; the UUID
- * supplies length and lowercase.
- */
-const randomPassword = () => `A1!${crypto.randomUUID()}`;
-
-const json = (body: unknown) => ({
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify(body),
-});
-
-/** Signs up a fresh user and returns the Authentication cookie from login. */
-async function signUpAndLogIn(extra: Record<string, unknown> = {}) {
-  const credentials = {
-    email: `user-${Date.now()}-${Math.random()}@example.com`,
-    password: randomPassword(),
-  };
-
-  const signup = await fetch(`${AUTH}/users`, json({ ...credentials, ...extra }));
-  expect(signup.status).toBe(201);
-
-  const login = await fetch(`${AUTH}/auth/login`, json(credentials));
-  expect(login.status).toBe(201);
-
-  const cookie = login.headers
-    .getSetCookie()
-    .find((value) => value.startsWith('Authentication='));
-  expect(cookie).toBeDefined();
-
-  return {
-    credentials,
-    signup: await signup.json(),
-    login: await login.json(),
-    cookie: cookie!.split(';')[0],
-  };
-}
+import { AUTH, RESERVATIONS, json, randomPassword, signUpAndLogIn } from './helpers';
 
 describe('auth', () => {
   test('never returns the password hash', async () => {
