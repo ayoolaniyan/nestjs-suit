@@ -3,11 +3,11 @@ kind: Service
 metadata:
   labels:
     app: payments
-  name: payments
+  name: payments-tcp
 spec:
   ports:
     - name: tcp
-      port: {{ .Values.ports.payments }}
+      port: {{ .Values.ports.paymentsTcp }}
       protocol: TCP
       targetPort: tcp
   selector:

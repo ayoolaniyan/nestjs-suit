@@ -1,15 +1,16 @@
+# Stripe webhooks arrive through the ingress.
 apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: reservations
-  name: reservations
+    app: payments
+  name: payments-http
 spec:
   ports:
     - name: http
-      port: {{ .Values.ports.reservations }}
+      port: {{ .Values.ports.paymentsHttp }}
       protocol: TCP
       targetPort: http
   selector:
-    app: reservations
+    app: payments
   type: NodePort

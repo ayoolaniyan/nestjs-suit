@@ -8,7 +8,14 @@ import {
 } from '@nestjs/common';
 import { TimeoutError, of, throwError } from 'rxjs';
 import { QueryFailedError } from 'typeorm';
-import { PAYMENTS_SERVICE, Role, User } from '@app/common';
+import {
+  EmailTemplate,
+  NOTIFICATION_SERVICE,
+  NOTIFY_EMAIL,
+  PAYMENTS_SERVICE,
+  Role,
+  User,
+} from '@app/common';
 import { ReservationsService } from './reservations.service';
 import { ReservationsRepository } from './reservations.repository';
 import { PlacesRepository } from './places/places.repository';
@@ -19,10 +26,13 @@ import { DAY_MS, startOfTodayUtc } from './booking-rules';
 describe('ReservationsService', () => {
   let service: ReservationsService;
   let payments: { send: jest.Mock };
+  let notifications: { emit: jest.Mock };
   let places: { findOne: jest.Mock };
   let repository: {
     findOneOrNull: jest.Mock;
     holdIfAvailable: jest.Mock;
+    confirmIfAvailable: jest.Mock;
+    failIfPending: jest.Mock;
     find: jest.Mock;
     findOne: jest.Mock;
     findOneAndUpdate: jest.Mock;
@@ -50,8 +60,28 @@ describe('ReservationsService', () => {
   const paymentsReply = (pattern: string) =>
     of(pattern === 'create_charge' ? { id: 'pi_1' } : { id: 're_1' });
 
+  /** What confirmIfAvailable reports for reservation 11. */
+  const confirmResult = (
+    outcome: 'confirmed' | 'unavailable' | 'unchanged',
+    status = outcome === 'confirmed'
+      ? ReservationStatus.Confirmed
+      : ReservationStatus.Pending,
+  ) => ({
+    outcome,
+    reservation: new Reservation({
+      id: 11,
+      status,
+      email: 'owner@example.com',
+      amountCents: 37500,
+      startDate: day(1),
+      endDate: day(4),
+      invoiceId: status === ReservationStatus.Confirmed ? 'pi_1' : null,
+    }),
+  });
+
   beforeEach(async () => {
     payments = { send: jest.fn().mockImplementation(paymentsReply) };
+    notifications = { emit: jest.fn().mockReturnValue(of(undefined)) };
     places = {
       findOne: jest
         .fn()
@@ -62,6 +92,10 @@ describe('ReservationsService', () => {
       holdIfAvailable: jest.fn((reservation: Reservation) =>
         Promise.resolve(Object.assign(reservation, { id: 11 })),
       ),
+      confirmIfAvailable: jest
+        .fn()
+        .mockImplementation(async () => confirmResult('confirmed')),
+      failIfPending: jest.fn().mockResolvedValue(true),
       find: jest.fn(),
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn((where, changes) =>
@@ -76,6 +110,7 @@ describe('ReservationsService', () => {
         { provide: ReservationsRepository, useValue: repository },
         { provide: PlacesRepository, useValue: places },
         { provide: PAYMENTS_SERVICE, useValue: payments },
+        { provide: NOTIFICATION_SERVICE, useValue: notifications },
       ],
     }).compile();
 
@@ -93,17 +128,59 @@ describe('ReservationsService', () => {
         status: ReservationStatus.Pending,
         // 3 nights at $125.00
         amountCents: 37500,
+        email: 'owner@example.com',
       });
       expect(payments.send).toHaveBeenCalledWith('create_charge', {
         paymentMethodId: 'pm_from_client',
         amountCents: 37500,
-        email: 'owner@example.com',
+        reservationId: 11,
         idempotencyKey: 'reservation-11-charge',
       });
+      expect(repository.confirmIfAvailable).toHaveBeenCalledWith(11, 'pi_1');
       expect(result).toMatchObject({
         status: ReservationStatus.Confirmed,
         invoiceId: 'pi_1',
       });
+    });
+
+    it('emails a confirmation once the booking is confirmed', async () => {
+      await service.create(booking(), owner);
+
+      expect(notifications.emit).toHaveBeenCalledWith(NOTIFY_EMAIL, {
+        email: 'owner@example.com',
+        template: EmailTemplate.BookingConfirmed,
+        data: {
+          reservationId: 11,
+          startDate: day(1).toISOString().slice(0, 10),
+          endDate: day(4).toISOString().slice(0, 10),
+          amountCents: 37500,
+        },
+      });
+    });
+
+    it('still confirms the booking when the email cannot be queued', async () => {
+      notifications.emit.mockReturnValue(
+        throwError(() => new Error('broker down')),
+      );
+
+      await expect(service.create(booking(), owner)).resolves.toMatchObject({
+        status: ReservationStatus.Confirmed,
+      });
+    });
+
+    it('refunds when the dates were rebooked before the charge completed', async () => {
+      repository.confirmIfAvailable.mockResolvedValue(
+        confirmResult('unavailable'),
+      );
+
+      await expect(service.create(booking(), owner)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(payments.send).toHaveBeenCalledWith('refund_charge', {
+        paymentIntentId: 'pi_1',
+        idempotencyKey: 'reservation-11-refund',
+      });
+      expect(notifications.emit).not.toHaveBeenCalled();
     });
 
     it('releases the dates when the card is declined', async () => {
@@ -132,9 +209,7 @@ describe('ReservationsService', () => {
     });
 
     it('refunds the charge when the booking cannot be confirmed', async () => {
-      repository.findOneAndUpdate
-        .mockRejectedValueOnce(new Error('deadlock'))
-        .mockResolvedValue({});
+      repository.confirmIfAvailable.mockRejectedValue(new Error('deadlock'));
 
       await expect(service.create(booking(), owner)).rejects.toBeInstanceOf(
         InternalServerErrorException,
@@ -252,6 +327,27 @@ describe('ReservationsService', () => {
       });
     });
 
+    it('emails the cancellation', async () => {
+      repository.findOne.mockResolvedValue(confirmed(day(2)));
+      repository.findOneAndUpdate.mockResolvedValue(
+        new Reservation({
+          id: 5,
+          status: ReservationStatus.Cancelled,
+          email: 'owner@example.com',
+          amountCents: 37500,
+          startDate: day(2),
+          endDate: day(3),
+        }),
+      );
+
+      await service.cancel(5, owner);
+
+      expect(notifications.emit).toHaveBeenCalledWith(
+        NOTIFY_EMAIL,
+        expect.objectContaining({ template: EmailTemplate.BookingCancelled }),
+      );
+    });
+
     it('refuses once the stay has started', async () => {
       repository.findOne.mockResolvedValue(confirmed(day(0)));
 
@@ -277,6 +373,80 @@ describe('ReservationsService', () => {
       await service.cancel(5, owner);
 
       expect(repository.findOne).toHaveBeenCalledWith({ id: 5, userId: 7 });
+    });
+  });
+
+  describe('recording payment outcomes from webhooks', () => {
+    const outcome = { reservationId: 11, paymentIntentId: 'pi_1' };
+
+    it('confirms a pending booking and emails the confirmation', async () => {
+      await expect(service.recordPaymentSucceeded(outcome)).resolves.toEqual({
+        status: ReservationStatus.Confirmed,
+      });
+      expect(repository.confirmIfAvailable).toHaveBeenCalledWith(11, 'pi_1');
+      expect(notifications.emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('changes nothing for a booking already confirmed', async () => {
+      repository.confirmIfAvailable.mockResolvedValue(
+        confirmResult('unchanged', ReservationStatus.Confirmed),
+      );
+
+      await service.recordPaymentSucceeded(outcome);
+
+      expect(notifications.emit).not.toHaveBeenCalled();
+      expect(payments.send).not.toHaveBeenCalled();
+    });
+
+    it('refunds a payment for a booking that had already failed', async () => {
+      repository.confirmIfAvailable.mockResolvedValue(
+        confirmResult('unchanged', ReservationStatus.Failed),
+      );
+
+      await service.recordPaymentSucceeded(outcome);
+
+      expect(payments.send).toHaveBeenCalledWith('refund_charge', {
+        paymentIntentId: 'pi_1',
+        idempotencyKey: 'reservation-11-refund',
+      });
+    });
+
+    it('does not refund a cancelled booking again', async () => {
+      repository.confirmIfAvailable.mockResolvedValue(
+        confirmResult('unchanged', ReservationStatus.Cancelled),
+      );
+
+      await service.recordPaymentSucceeded(outcome);
+
+      expect(payments.send).not.toHaveBeenCalled();
+    });
+
+    it('refunds when the dates were rebooked after the hold lapsed', async () => {
+      repository.confirmIfAvailable.mockResolvedValue(
+        confirmResult('unavailable'),
+      );
+
+      await expect(service.recordPaymentSucceeded(outcome)).resolves.toEqual({
+        status: ReservationStatus.Failed,
+      });
+      expect(payments.send).toHaveBeenCalledWith(
+        'refund_charge',
+        expect.objectContaining({ paymentIntentId: 'pi_1' }),
+      );
+    });
+
+    it('lets a database error through, so Stripe redelivers', async () => {
+      repository.confirmIfAvailable.mockRejectedValue(new Error('deadlock'));
+
+      await expect(service.recordPaymentSucceeded(outcome)).rejects.toThrow(
+        'deadlock',
+      );
+    });
+
+    it('releases the dates of a pending booking whose charge failed', async () => {
+      await service.recordPaymentFailed(outcome);
+
+      expect(repository.failIfPending).toHaveBeenCalledWith(11);
     });
   });
 

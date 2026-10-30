@@ -39,7 +39,10 @@ describe('auth', () => {
 
     expect(wrongPassword.status).toBe(401);
     expect(unknownEmail.status).toBe(401);
-    expect(await unknownEmail.json()).toEqual(await wrongPassword.json());
+    // Identical apart from the request id, which is per request.
+    const { requestId: _a, ...unknownBody } = await unknownEmail.json();
+    const { requestId: _b, ...wrongBody } = await wrongPassword.json();
+    expect(unknownBody).toEqual(wrongBody);
   });
 });
 

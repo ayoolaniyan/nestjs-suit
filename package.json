@@ -34,13 +34,17 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/swagger": "^7.4.2",
     "@nestjs/terminus": "^10.3.0",
+    "@nestjs/throttler": "^6.7.1",
     "@nestjs/typeorm": "^10.0.2",
     "@prometheus-io/client": "^0.16.1",
+    "amqp-connection-manager": "^4.1.15",
+    "amqplib": "^0.10.9",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cookie-parser": "^1.4.6",
     "express": "^4.19.2",
+    "helmet": "^8.3.0",
     "joi": "^17.13.1",
     "mysql2": "^3.11.0",
     "nestjs-pino": "^4.1.0",
@@ -59,6 +63,7 @@
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@types/amqplib": "^0.10.8",
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.7",
     "@types/express": "^4.17.17",
@@ -95,7 +100,12 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "{apps,libs}/**/*.ts",
+      "!**/*.spec.ts",
+      "!**/main.ts",
+      "!**/index.ts",
+      "!**/database/migrations/**",
+      "!**/database/data-source.ts"
     ],
     "coverageDirectory": "./coverage",
     "testEnvironment": "node",
@@ -105,6 +115,14 @@
     ],
     "moduleNameMapper": {
       "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1"
+    },
+    "coverageThreshold": {
+      "global": {
+        "statements": 65,
+        "branches": 75,
+        "functions": 50,
+        "lines": 65
+      }
     }
   },
   "packageManager": "pnpm@10.28.0"

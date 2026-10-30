@@ -18,14 +18,14 @@ spec:
               service:
                 name: reservations
                 port:
-                  number: {{ .Values.ports.reservations }}
+                  number: {{ .Values.ports.reservationsHttp }}
           - path: /places
             pathType: Prefix
             backend:
               service:
                 name: reservations
                 port:
-                  number: {{ .Values.ports.reservations }}
+                  number: {{ .Values.ports.reservationsHttp }}
           - path: /auth
             pathType: Prefix
             backend:
@@ -33,6 +33,15 @@ spec:
                 name: auth-http
                 port:
                   number: {{ .Values.ports.authHttp }}
+          # Stripe's webhook deliveries. The signature check, not the network,
+          # is what keeps others out, so the path has to be public.
+          - path: /payments/webhook
+            pathType: Exact
+            backend:
+              service:
+                name: payments-http
+                port:
+                  number: {{ .Values.ports.paymentsHttp }}
           # Signup and "current user" live on the auth service's /users
           # controller, which the ingress previously did not route at all.
           - path: /users

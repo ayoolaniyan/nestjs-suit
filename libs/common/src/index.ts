@@ -9,3 +9,6 @@ export * from './health';
 export * from './pipes';
 export * from './observability';
 export * from './swagger';
+export * from './errors';
+export * from './messaging';
+export * from './security';

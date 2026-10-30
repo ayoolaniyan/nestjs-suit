@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: reservations
+  name: reservations
+spec:
+  ports:
+    - name: http
+      port: {{ .Values.ports.reservationsHttp }}
+      protocol: TCP
+      targetPort: http
+  selector:
+    app: reservations
+  type: NodePort

@@ -21,6 +21,9 @@ spec:
           name: auth
           env:
             {{- include "nestjs-suit.mysqlEnv" . | nindent 12 }}
+            {{- include "nestjs-suit.securityEnv" . | nindent 12 }}
+            - name: LOGIN_ATTEMPTS_PER_15_MIN
+              value: {{ .Values.security.loginAttemptsPer15Min | quote }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -28,6 +31,8 @@ spec:
                   key: jwtSecret
             - name: JWT_EXPIRATION
               value: {{ .Values.jwt.expirationSeconds | quote }}
+            - name: REFRESH_TOKEN_EXPIRATION
+              value: {{ .Values.jwt.refreshExpirationSeconds | quote }}
             - name: SWAGGER_ENABLED
               value: {{ .Values.swaggerEnabled | quote }}
             - name: HTTP_PORT

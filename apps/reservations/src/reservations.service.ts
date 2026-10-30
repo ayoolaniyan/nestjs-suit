@@ -11,18 +11,33 @@ import {
 } from '@nestjs/common';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { ReservationsRepository } from './reservations.repository';
-import { PAYMENTS_SERVICE, User, observeRpc, withRequestId } from '@app/common';
+import {
+  EmailTemplate,
+  NOTIFICATION_SERVICE,
+  NOTIFY_EMAIL,
+  NotifyEmailEvent,
+  PAYMENTS_SERVICE,
+  PaymentOutcomeDto,
+  User,
+  observeRpc,
+  withRequestId,
+} from '@app/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { FindOptionsWhere, QueryFailedError } from 'typeorm';
-import { TimeoutError, firstValueFrom, timeout } from 'rxjs';
+import { TimeoutError, firstValueFrom, lastValueFrom, timeout } from 'rxjs';
 import { Reservation, ReservationStatus } from './models/reservation.entity';
 import { PlacesRepository } from './places/places.repository';
+import { ConfirmResult } from './reservations.repository';
 import { nightsForStay } from './booking-rules';
 
 export const ADMIN_ROLE = 'Admin';
 
 // Covers the round trip to Stripe, which can take several seconds.
 export const PAYMENTS_TIMEOUT_MS = 15000;
+
+// Publishing to RabbitMQ waits for the broker's confirmation; bounded so a
+// broker outage delays a booking response by seconds, not indefinitely.
+export const NOTIFY_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class ReservationsService {
@@ -32,6 +47,8 @@ export class ReservationsService {
     private readonly reservationRepository: ReservationsRepository,
     private readonly placesRepository: PlacesRepository,
     @Inject(PAYMENTS_SERVICE) private readonly paymentService: ClientProxy,
+    @Inject(NOTIFICATION_SERVICE)
+    private readonly notificationService: ClientProxy,
   ) {}
 
   /**
@@ -53,7 +70,7 @@ export class ReservationsService {
         idempotencyKey,
       });
       if (previous) {
-        return this.replay(previous, paymentMethodId, user);
+        return this.replay(previous, paymentMethodId);
       }
     }
 
@@ -71,10 +88,11 @@ export class ReservationsService {
         // could pay whatever it liked.
         amountCents: nights * place.pricePerNightCents,
         idempotencyKey: idempotencyKey ?? null,
+        email: user.email,
       }),
     );
 
-    return this.chargeAndConfirm(reservation, paymentMethodId, user);
+    return this.chargeAndConfirm(reservation, paymentMethodId);
   }
 
   findAll(user: User) {
@@ -109,10 +127,39 @@ export class ReservationsService {
       idempotencyKey: `reservation-${reservation.id}-refund`,
     });
 
-    return this.reservationRepository.findOneAndUpdate(
+    const cancelled = await this.reservationRepository.findOneAndUpdate(
       { id: reservation.id },
       { status: ReservationStatus.Cancelled, refundId: refund.id },
     );
+    await this.notify(cancelled, EmailTemplate.BookingCancelled);
+    return cancelled;
+  }
+
+  /**
+   * Stripe reports, by webhook via payments, that a reservation's charge
+   * succeeded. Usually the charge reply has already confirmed it and this
+   * changes nothing; it matters when that reply never arrived (a timeout),
+   * which would otherwise leave the booking pending until its hold lapsed.
+   *
+   * Errors propagate, so payments answers Stripe with an error and Stripe
+   * redelivers.
+   */
+  async recordPaymentSucceeded({
+    reservationId,
+    paymentIntentId,
+  }: PaymentOutcomeDto) {
+    const result = await this.reservationRepository.confirmIfAvailable(
+      reservationId,
+      paymentIntentId,
+    );
+    const reservation = await this.settle(result, paymentIntentId);
+    return { status: reservation.status };
+  }
+
+  /** Stripe reports the charge failed: release the dates if still held. */
+  async recordPaymentFailed({ reservationId }: PaymentOutcomeDto) {
+    await this.reservationRepository.failIfPending(reservationId);
+    return { recorded: true };
   }
 
   remove(id: number, user: User) {
@@ -128,16 +175,12 @@ export class ReservationsService {
    * the first charge went through (say, the reply timed out) Stripe returns
    * that charge instead of taking a second payment.
    */
-  private async replay(
-    previous: Reservation,
-    paymentMethodId: string,
-    user: User,
-  ) {
+  private async replay(previous: Reservation, paymentMethodId: string) {
     switch (previous.status) {
       case ReservationStatus.Confirmed:
         return previous;
       case ReservationStatus.Pending:
-        return this.chargeAndConfirm(previous, paymentMethodId, user);
+        return this.chargeAndConfirm(previous, paymentMethodId);
       default:
         throw new ConflictException(
           'This Idempotency-Key belongs to a booking that did not complete; use a new key to try again',
@@ -166,14 +209,13 @@ export class ReservationsService {
   private async chargeAndConfirm(
     reservation: Reservation,
     paymentMethodId: string,
-    { email }: User,
   ) {
     let paymentIntent: { id: string };
     try {
       paymentIntent = await this.callPayments('create_charge', {
         paymentMethodId,
         amountCents: reservation.amountCents,
-        email,
+        reservationId: reservation.id,
         // Derived from the reservation, so every attempt to pay for this
         // booking is the same charge as far as Stripe is concerned.
         idempotencyKey: `reservation-${reservation.id}-charge`,
@@ -194,10 +236,11 @@ export class ReservationsService {
       throw error;
     }
 
+    let result: ConfirmResult;
     try {
-      return await this.reservationRepository.findOneAndUpdate(
-        { id: reservation.id },
-        { status: ReservationStatus.Confirmed, invoiceId: paymentIntent.id },
+      result = await this.reservationRepository.confirmIfAvailable(
+        reservation.id,
+        paymentIntent.id,
       );
     } catch (error) {
       // The customer has paid for a booking that could not be confirmed.
@@ -210,6 +253,47 @@ export class ReservationsService {
       throw new InternalServerErrorException(
         'The reservation could not be saved and the charge has been refunded.',
       );
+    }
+
+    const settled = await this.settle(result, paymentIntent.id);
+    if (settled.status !== ReservationStatus.Confirmed) {
+      throw new ConflictException(
+        'The dates were booked by someone else before the payment completed; the charge has been refunded.',
+      );
+    }
+    return settled;
+  }
+
+  /**
+   * Acts on the outcome of confirming a paid reservation. The charge reply
+   * and Stripe's webhook both end here, in either order and possibly more
+   * than once, so every branch is safe to repeat: the confirmation email
+   * goes out only on the transition to confirmed, and refunds are keyed on
+   * the reservation.
+   */
+  private async settle(
+    { outcome, reservation }: ConfirmResult,
+    paymentIntentId: string,
+  ): Promise<Reservation> {
+    switch (outcome) {
+      case 'confirmed':
+        await this.notify(reservation, EmailTemplate.BookingConfirmed);
+        return reservation;
+      case 'unavailable':
+        this.logger.warn(
+          `Reservation ${reservation.id} was paid after its dates were rebooked; refunding ${paymentIntentId}`,
+        );
+        await this.refundAfterFailure(reservation.id, paymentIntentId);
+        reservation.status = ReservationStatus.Failed;
+        return reservation;
+      case 'unchanged':
+        // Paid for a booking that had already been given up on: give the
+        // money back. Confirmed (recorded already) and cancelled (refunded
+        // already) need nothing.
+        if (reservation.status === ReservationStatus.Failed) {
+          await this.refundAfterFailure(reservation.id, paymentIntentId);
+        }
+        return reservation;
     }
   }
 
@@ -253,6 +337,40 @@ export class ReservationsService {
       );
     }
     await this.setStatus(reservationId, ReservationStatus.Failed);
+  }
+
+  /**
+   * Queues a booking email. Best effort: the booking has happened whether or
+   * not the email can be queued, so a failure is logged, not raised. Once
+   * queued, notifications retries delivery itself.
+   */
+  private async notify(reservation: Reservation, template: EmailTemplate) {
+    if (!reservation.email || reservation.amountCents === null) {
+      return;
+    }
+    const event: NotifyEmailEvent = {
+      email: reservation.email,
+      template,
+      data: {
+        reservationId: reservation.id,
+        startDate: reservation.startDate.toISOString().slice(0, 10),
+        endDate: reservation.endDate.toISOString().slice(0, 10),
+        amountCents: reservation.amountCents,
+      },
+    };
+    try {
+      await lastValueFrom(
+        this.notificationService
+          .emit(NOTIFY_EMAIL, withRequestId(event))
+          .pipe(timeout(NOTIFY_TIMEOUT_MS)),
+        { defaultValue: undefined },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not queue ${template} email for reservation ${reservation.id}`,
+        (error as Error)?.stack,
+      );
+    }
   }
 
   private async callPayments<R>(pattern: string, data: object): Promise<R> {

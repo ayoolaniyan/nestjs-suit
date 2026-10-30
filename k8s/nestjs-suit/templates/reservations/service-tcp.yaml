@@ -2,14 +2,14 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: notifications
-  name: notifications
+    app: reservations
+  name: reservations-tcp
 spec:
   ports:
     - name: tcp
-      port: {{ .Values.ports.notifications }}
+      port: {{ .Values.ports.reservationsTcp }}
       protocol: TCP
       targetPort: tcp
   selector:
-    app: notifications
+    app: reservations
   type: ClusterIP

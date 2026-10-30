@@ -14,28 +14,34 @@ spec:
       labels:
         app: reservations
       annotations:
-        {{- include "nestjs-suit.metricsAnnotations" (dict "port" .Values.ports.reservations) | nindent 8 }}
+        {{- include "nestjs-suit.metricsAnnotations" (dict "port" .Values.ports.reservationsHttp) | nindent 8 }}
     spec:
       containers:
         - image: {{ include "nestjs-suit.image" (dict "root" . "name" "reservations") }}
           name: reservations
           env:
             {{- include "nestjs-suit.mysqlEnv" . | nindent 12 }}
+            {{- include "nestjs-suit.securityEnv" . | nindent 12 }}
+            {{- include "nestjs-suit.rabbitmqEnv" . | nindent 12 }}
             - name: SWAGGER_ENABLED
               value: {{ .Values.swaggerEnabled | quote }}
-            - name: PORT
-              value: {{ .Values.ports.reservations | quote }}
+            - name: HTTP_PORT
+              value: {{ .Values.ports.reservationsHttp | quote }}
+            - name: TCP_PORT
+              value: {{ .Values.ports.reservationsTcp | quote }}
             - name: AUTH_HOST
               value: auth-tcp
             - name: AUTH_PORT
               value: {{ .Values.ports.authTcp | quote }}
             - name: PAYMENTS_HOST
-              value: payments
+              value: payments-tcp
             - name: PAYMENTS_PORT
-              value: {{ .Values.ports.payments | quote }}
+              value: {{ .Values.ports.paymentsTcp | quote }}
           ports:
             - name: http
-              containerPort: {{ .Values.ports.reservations }}
+              containerPort: {{ .Values.ports.reservationsHttp }}
+            - name: tcp
+              containerPort: {{ .Values.ports.reservationsTcp }}
           {{- include "nestjs-suit.httpProbes" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

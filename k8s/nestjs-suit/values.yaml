@@ -5,13 +5,18 @@ global:
   # release is reproducible and can be rolled back.
   imageTag: latest
 
-# Ports match .env.example and docker-compose.
+# Ports match the apps' .env.example files and docker-compose.
 ports:
-  reservations: 3000
+  reservationsHttp: 3000
+  # Payment outcomes from payments.
+  reservationsTcp: 3005
   authHttp: 3001
   authTcp: 3002
-  payments: 3003
-  notifications: 3004
+  paymentsTcp: 3003
+  # Stripe webhooks, health and metrics.
+  paymentsHttp: 3006
+  # Health checks only; notifications consumes from RabbitMQ.
+  notificationsHttp: 3004
 
 mysql:
   # e.g. the RDS endpoint. Required.
@@ -24,17 +29,54 @@ mysql:
 jwt:
   # Secret with a `jwtSecret` key.
   secretName: jwt
-  expirationSeconds: 3600
+  # Access token lifetime. Short, since the refresh token renews it.
+  expirationSeconds: 900
+  # Session (refresh token) lifetime.
+  refreshExpirationSeconds: 2592000
 
 stripe:
-  # Secret with an `apiKey` key.
+  # Secret with `apiKey` and `webhookSecret` (whsec_...) keys. Point the
+  # Stripe webhook endpoint at https://<host>/payments/webhook, sending
+  # payment_intent.succeeded and payment_intent.payment_failed.
   secretName: stripe
 
+rabbitmq:
+  # Secret with a `url` key, e.g. amqps://user:password@b-xxxx.mq.us-east-1.amazonaws.com:5671
+  # for Amazon MQ. Carries notification emails from reservations.
+  secretName: rabbitmq
+
+# The public HTTP services (auth, reservations).
+security:
+  # Comma-separated browser origins allowed to call the API with cookies.
+  # Empty: cross-origin requests are refused.
+  corsOrigins: ''
+  # The ALB, whose X-Forwarded-For gives the client address that rate limits
+  # are counted against.
+  trustProxyHops: 1
+  rateLimitPerMinute: 120
+  loginAttemptsPer15Min: 10
+
 notifications:
-  smtpUser: ''
-  googleOAuthClientId: ''
-  # Secret with `clientSecret` and `refreshToken` keys.
-  googleSecretName: google
+  # The sender address. Required.
+  mailFrom: ''
+  # smtp (e.g. Amazon SES's SMTP interface) or gmail (OAuth2).
+  transport: smtp
+  smtp:
+    host: ''
+    port: 587
+    # true for implicit TLS on 465; otherwise STARTTLS.
+    secure: false
+    # Leave empty for an unauthenticated relay.
+    user: ''
+    # Secret with a `password` key; used when user is set.
+    passwordSecretName: smtp
+  gmail:
+    user: ''
+    clientId: ''
+    # Secret with `clientSecret` and `refreshToken` keys.
+    secretName: google
+  # Attempts per email before it is parked in notifications.dead.
+  maxAttempts: 5
 
 # Serves OpenAPI docs at /auth/docs and /reservations/docs. Off by default:
 # publishing the API surface of a production deployment is an opt-in.

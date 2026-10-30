@@ -18,26 +18,57 @@ spec:
         - image: {{ include "nestjs-suit.image" (dict "root" . "name" "notifications") }}
           name: notifications
           env:
-            - name: PORT
-              value: {{ .Values.ports.notifications | quote }}
+            - name: HTTP_PORT
+              value: {{ .Values.ports.notificationsHttp | quote }}
+            {{- include "nestjs-suit.rabbitmqEnv" . | nindent 12 }}
+            - name: MAIL_MAX_ATTEMPTS
+              value: {{ .Values.notifications.maxAttempts | quote }}
+            - name: MAIL_FROM
+              value: {{ required "notifications.mailFrom is required" .Values.notifications.mailFrom | quote }}
+            - name: MAIL_TRANSPORT
+              value: {{ .Values.notifications.transport | quote }}
+            {{- if eq .Values.notifications.transport "smtp" }}
+            {{- with .Values.notifications.smtp }}
+            - name: SMTP_HOST
+              value: {{ required "notifications.smtp.host is required" .host | quote }}
+            - name: SMTP_PORT
+              value: {{ .port | quote }}
+            - name: SMTP_SECURE
+              value: {{ .secure | quote }}
+            {{- if .user }}
             - name: SMTP_USER
-              value: {{ required "notifications.smtpUser is required" .Values.notifications.smtpUser | quote }}
+              value: {{ .user | quote }}
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .passwordSecretName }}
+                  key: password
+            {{- end }}
+            {{- end }}
+            {{- else if eq .Values.notifications.transport "gmail" }}
+            {{- with .Values.notifications.gmail }}
+            - name: SMTP_USER
+              value: {{ required "notifications.gmail.user is required" .user | quote }}
             - name: GOOGLE_OAUTH_CLIENT_ID
-              value: {{ required "notifications.googleOAuthClientId is required" .Values.notifications.googleOAuthClientId | quote }}
+              value: {{ required "notifications.gmail.clientId is required" .clientId | quote }}
             - name: GOOGLE_OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.notifications.googleSecretName }}
+                  name: {{ .secretName }}
                   key: clientSecret
             - name: GOOGLE_OAUTH_REFRESH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.notifications.googleSecretName }}
+                  name: {{ .secretName }}
                   key: refreshToken
+            {{- end }}
+            {{- else }}
+            {{- fail "notifications.transport must be smtp or gmail" }}
+            {{- end }}
           ports:
-            - name: tcp
-              containerPort: {{ .Values.ports.notifications }}
-          {{- include "nestjs-suit.tcpProbes" . | nindent 10 }}
+            - name: http
+              containerPort: {{ .Values.ports.notificationsHttp }}
+          {{- include "nestjs-suit.httpProbes" . | nindent 10 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- include "nestjs-suit.securityContext" . | nindent 10 }}

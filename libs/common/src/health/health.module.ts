@@ -1,11 +1,23 @@
-import { Module } from '@nestjs/common';
+import { DynamicModule, Module } from '@nestjs/common';
 import { TerminusModule } from '@nestjs/terminus';
-import { HealthController } from './health.controller';
+import {
+  HEALTH_CHECKS,
+  HealthChecks,
+  HealthController,
+} from './health.controller';
 
-// For the HTTP services, which are also the ones with a database. The
-// TCP-only services are probed on their socket instead.
-@Module({
-  imports: [TerminusModule],
-  controllers: [HealthController],
-})
-export class HealthModule {}
+/**
+ * `/health` (liveness) and `/health/ready` (readiness), the latter checking
+ * the dependencies named here.
+ */
+@Module({})
+export class HealthModule {
+  static forRoot(checks: HealthChecks = {}): DynamicModule {
+    return {
+      module: HealthModule,
+      imports: [TerminusModule],
+      controllers: [HealthController],
+      providers: [{ provide: HEALTH_CHECKS, useValue: checks }],
+    };
+  }
+}

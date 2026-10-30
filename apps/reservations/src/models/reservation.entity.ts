@@ -68,6 +68,13 @@ export class Reservation extends AbstractEntity<Reservation> {
   @Column({ type: 'varchar', length: 255, nullable: true })
   idempotencyKey: string | null;
 
+  /**
+   * Where booking emails go, captured at booking time: confirmation can
+   * arrive later by webhook, with no signed-in user to ask.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  email: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

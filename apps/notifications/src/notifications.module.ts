@@ -1,30 +1,40 @@
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import * as Joi from 'joi';
-import { LoggerModule, RpcRequestContextInterceptor } from '@app/common';
+import {
+  AllExceptionsFilter,
+  HealthModule,
+  LoggerModule,
+  rabbitmqValidationSchema,
+  RpcRequestContextInterceptor,
+} from '@app/common';
 import { ConfigModule } from '@nestjs/config';
+import { mailValidationSchema } from './mail-transport';
 
 @Module({
   imports: [
     LoggerModule,
+    HealthModule.forRoot({ rabbitmq: true }),
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
-        SMTP_USER: Joi.string().required(),
-        GOOGLE_OAUTH_CLIENT_ID: Joi.string().required(),
-        GOOGLE_OAUTH_CLIENT_SECRET: Joi.string().required(),
-        GOOGLE_OAUTH_REFRESH_TOKEN: Joi.string().required(),
-        PORT: Joi.number().required(),
+        ...rabbitmqValidationSchema,
+        ...mailValidationSchema,
+        // Attempts per email, the first included, before it is parked.
+        MAIL_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
+        // Health checks only.
+        HTTP_PORT: Joi.number().required(),
       }),
     }),
   ],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
-    // Module-level, so it also applies to the TCP handlers.
+    // Module-level, so they also apply to the message handlers.
     { provide: APP_INTERCEPTOR, useClass: RpcRequestContextInterceptor },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })
 export class NotificationsModule {}
